@@ -1,55 +1,71 @@
 <?php
 require './route_guard.php';
+require 'vendor/autoload.php'; 
 
-// Function to generate a secure token
-function generateToken() {
-    return bin2hex(random_bytes(32)); // Generates a 64-character secure token
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
 }
 
-// Check for existing token and validate session timeout
-if (isset($_SESSION['user_id']) && isset($_SESSION['token'])) {
-    $stmt = $pdo->prepare("SELECT expires_at FROM tokens WHERE user_id = ? AND token = ?");
-    $stmt->execute([$_SESSION['user_id'], $_SESSION['token']]);
-    $token_data = $stmt->fetch(PDO::FETCH_ASSOC);
+function generateToken() {
+    return bin2hex(random_bytes(32)); 
+}
 
-    if ($token_data) {
-        $expires_at = strtotime($token_data['expires_at']);
-        $current_time = time();
+function generateOTP() {
+    return str_pad(mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+}
 
-        if ($current_time > $expires_at) {
-            // Token has expired, destroy session and remove token
-            $stmt = $pdo->prepare("DELETE FROM tokens WHERE user_id = ? AND token = ?");
-            $stmt->execute([$_SESSION['user_id'], $_SESSION['token']]);
-            
-            $_SESSION = array();
-            session_destroy();
-            header('Location: login.php?message=Session expired. Please log in again.');
-            exit;
-        } else {
-            // Token is valid, redirect to appropriate dashboard
-            $user_role = $_SESSION['user_role'] ?? '';
-            if ($user_role === 'Applicant') {
-                header('Location: applicantdashboard.php');
-                exit;
-            } elseif ($user_role === 'Admin') {
-                header('Location: teacher_dashboard.php');
-                exit;
-            } elseif ($user_role === 'admin') {
-                header('Location: navigation.php');
-                exit;
-            }
-        }
-    } else {
-        // Invalid token, destroy session
-        $_SESSION = array();
-        session_destroy();
-        header('Location: login.php?message=Invalid session. Please log in again.');
-        exit;
+function sendOTP($email, $otp) {
+    $mail = new PHPMailer(true);
+
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com'; 
+        $mail->SMTPAuth   = true;
+        $mail->Username   = 'ischobsit@gmail.com'; 
+        $mail->Password   = 'wcep jxly qzwn ybud'; 
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+
+        $mail->setFrom('ischobsit@gmail.com', 'ISCHO App');
+        $mail->addAddress($email);
+
+        $mail->isHTML(true);
+        $mail->Subject = "Your OTP for iSCHO Registration";
+        $mail->Body = "
+    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px;'>
+        <!-- Header -->
+        <div style='background-color: #4f46e5; padding: 20px; text-align: center; border-top-left-radius: 8px; border-top-right-radius: 8px;'>
+            <h1 style='color: #ffffff; margin: 0; font-size: 24px;'>Your OTP Code</h1>
+        </div>
+        <!-- Body -->
+        <div style='padding: 30px; background-color: #ffffff;'>
+            <p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>Hello,</p>
+            <p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>Thank you for registering with us! To complete your registration, please use the following One-Time Password (OTP):</p>
+            <div style='text-align: center; margin: 20px 0;'>
+                <span style='display: inline-block; background-color: #f3f4f6; padding: 15px 25px; border-radius: 5px; font-size: 24px; font-weight: bold; color: #4f46e5; letter-spacing: 2px;'>$otp</span>
+            </div>
+            <p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>This OTP is valid for <strong>10 minutes</strong>. Please do not share this code with anyone.</p>
+            <p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>If you did not request this OTP, please ignore this email or contact us at <a href='mailto:ischobsit@gmail.com' style='color: #4f46e5; text-decoration: none;'>ischobsit@gmail.com</a>.</p>
+            <p style='color: #1f2937; font-size: 16px; margin-bottom: 0;'>Best regards,<br>iSCHO Admin Team</p>
+        </div>
+        <!-- Footer -->
+        <div style='background-color: #f9fafb; padding: 15px; text-align: center; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;'>
+            <p style='color: #6b7280; font-size: 12px; margin: 0;'>© 2025 iSCHO. All rights reserved.</p>
+        </div>
+    </div>
+";
+        $mail->AltBody = "Hello,\n\nThank you for registering with us! To complete your registration, please use the following One-Time Password (OTP):\n\n$otp\n\nThis OTP is valid for 10 minutes. Please do not share this code with anyone.\n\nIf you did not request this OTP, please ignore this email or contact us at ischobsit@gmail.com.\n\nBest regards,\nScholarship Admin Team";
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        return "Failed to send OTP: {$mail->ErrorInfo}";
     }
 }
 
-// Handle Registration
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register'])) {
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset($_POST['verify_otp'])) {
     $municipality = trim($_POST['municipality']);
     $barangay = trim($_POST['barangay']);
     $firstname = trim($_POST['firstname']);
@@ -68,6 +84,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register'])) {
 
     $register_error = '';
 
+    if (!preg_match('/[A-Z]/', $password) || !preg_match('/[0-9]/', $password)) {
+        $register_error = "Password must contain at least one uppercase letter and one number.";
+    }
+
     if ($password !== $confirm_password) {
         $register_error = "Passwords do not match.";
     }
@@ -85,49 +105,133 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register'])) {
     }
 
     if (empty($register_error)) {
-        try {
-            $pdo->beginTransaction(); // Start a transaction to ensure data consistency
 
-            // Insert into users table
-            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $pdo->prepare("
-                INSERT INTO users (
-                    firstname, lastname, middlename, contact_no, email, username, password, role
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([
-                $firstname, $lastname, $middlename, $contact_no, $email, $username, $hashed_password, 'Applicant'
-            ]);
+        $otp = generateOTP();
+        $expires_at = date('Y-m-d H:i:s', strtotime('+10 minutes'));
 
-            // Get the last inserted user ID
-            $user_id = $pdo->lastInsertId();
+        $_SESSION['pending_registration'] = [
+            'municipality' => $municipality,
+            'barangay' => $barangay,
+            'firstname' => $firstname,
+            'lastname' => $lastname,
+            'middlename' => $middlename,
+            'sex' => $sex,
+            'civil_status' => $civil_status,
+            'nationality' => $nationality,
+            'birthdate' => $birthdate,
+            'place_of_birth' => $place_of_birth,
+            'contact_no' => $contact_no,
+            'email' => $email,
+            'username' => $username,
+            'password' => $password,
+            'otp' => $otp,
+            'otp_expires_at' => $expires_at
+        ];
 
-            // Insert into users_info table
-            $stmt = $pdo->prepare("
-                INSERT INTO users_info (
-                    user_id, municipality, barangay, sex, civil_status, nationality, birthdate, place_of_birth
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([
-                $user_id, $municipality, $barangay, $sex, $civil_status, $nationality, $birthdate, $place_of_birth
-            ]);
-
-            $pdo->commit(); // Commit the transaction
-
-            $_SESSION['register_success'] = "Registration successful! Please log in.";
-        } catch (PDOException $e) {
-            $pdo->rollBack(); // Roll back the transaction on error
-            $register_error = "Registration failed: " . $e->getMessage();
+        $email_result = sendOTP($email, $otp);
+        if ($email_result !== true) {
+            $register_error = $email_result;
+            unset($_SESSION['pending_registration']);
+            $_SESSION['show_register_popup'] = true; 
+        } else {
+            $_SESSION['otp_email'] = $email;
+            $_SESSION['show_otp_popup'] = true;
+            $_SESSION['show_register_popup'] = true; 
         }
     }
 
     if (!empty($register_error)) {
         $_SESSION['register_error'] = $register_error;
+        $_SESSION['show_register_popup'] = true; 
     }
 }
 
-// Handle Login
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp'])) {
+
+    if (!isset($_SESSION['pending_registration'])) {
+        $_SESSION['otp_error'] = "Registration data not found. Please try registering again.";
+        unset($_SESSION['otp_email']);
+        unset($_SESSION['show_otp_popup']);
+        $_SESSION['show_register_popup'] = false; 
+    } else {
+        $otp_code = trim($_POST['otp']);
+        $email = $_SESSION['otp_email'];
+        $pending_data = $_SESSION['pending_registration'];
+
+        $otp_input_str = (string)$otp_code;
+ 
+        error_log("OTP Verification Attempt - Email: $email, Input OTP: $otp_code, Session OTP: " . $pending_data['otp'] . ", Expires At: " . $pending_data['otp_expires_at'] . ", Current Time: " . time() . ", Expires Timestamp: " . strtotime($pending_data['otp_expires_at']));
+
+        if ($otp_input_str != $db_otp_str || strtotime($pending_data['otp_expires_at']) <= time()) {
+
+            $_SESSION['otp_validation_error'] = "Wrong OTP, Please try again";
+            error_log("OTP Verification Failed - Email: $email, Input OTP: $otp_code");
+            $_SESSION['show_otp_popup'] = true; 
+            $_SESSION['show_register_popup'] = true; 
+        } else {
+
+            try {
+                $pdo->beginTransaction();
+
+                $hashed_password = password_hash($pending_data['password'], PASSWORD_DEFAULT);
+                $stmt = $pdo->prepare("
+                    INSERT INTO users (
+                        firstname, lastname, middlename, contact_no, email, username, password, role, otp, otp_expires_at, otp_verified
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                    $pending_data['firstname'],
+                    $pending_data['lastname'],
+                    $pending_data['middlename'],
+                    $pending_data['contact_no'],
+                    $pending_data['email'],
+                    $pending_data['username'],
+                    $hashed_password,
+                    'Applicant',
+                    $pending_data['otp'],
+                    $pending_data['otp_expires_at'],
+
+                ]);
+
+                $user_id = $pdo->lastInsertId();
+
+                $stmt = $pdo->prepare("
+                    INSERT INTO users_info (
+                        user_id, municipality, barangay, sex, civil_status, nationality, birthdate, place_of_birth
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                    $user_id,
+                    $pending_data['municipality'],
+                    $pending_data['barangay'],
+                    $pending_data['sex'],
+                    $pending_data['civil_status'],
+                    $pending_data['nationality'],
+                    $pending_data['birthdate'],
+                    $pending_data['place_of_birth']
+                ]);
+
+                $pdo->commit();
+
+                $_SESSION['login_success'] = "Registered Successfully, Please Login";
+
+                unset($_SESSION['pending_registration']);
+                unset($_SESSION['otp_email']);
+                $_SESSION['show_otp_popup'] = false; 
+                $_SESSION['show_register_popup'] = false; 
+            } catch (PDOException $e) {
+                $pdo->rollBack();
+                $_SESSION['otp_error'] = "Failed to complete registration: " . $e->getMessage();
+                error_log("Registration Error: " . $e->getMessage());
+                $_SESSION['show_otp_popup'] = true; 
+                $_SESSION['show_register_popup'] = true; 
+            }
+        }
+    }
+}
+
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset($_POST['verify_otp'])) {
     $email = $_POST['email'];
     $password = $_POST['password'];
 
@@ -136,23 +240,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($user && password_verify($password, $user['password'])) {
-        // Generate a new token
+
         $token = generateToken();
         $expires_at = date('Y-m-d H:i:s', strtotime('+30 minutes'));
 
         try {
-            // Store the token in the database
+
             $stmt = $pdo->prepare("
                 INSERT INTO tokens (user_id, token, expires_at)
                 VALUES (?, ?, ?)
             ");
-            $stmt->execute([$user['id'], $token, $expires_at]);
+            $result = $stmt->execute([$user['id'], $token, $expires_at]);
         } catch (PDOException $e) {
             $login_error = "Failed to create session token: " . $e->getMessage();
+            error_log("Token Insert Error: " . $e->getMessage());
         }
 
         if (empty($login_error)) {
-            // Set session variables
+
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['firstname'] = $user['firstname'];
             $_SESSION['lastname'] = $user['lastname'];
@@ -160,16 +265,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             $_SESSION['user_role'] = $user['role'];
             $_SESSION['token'] = $token;
 
-            // Redirect based on role
+
             if ($user['role'] === 'Applicant') {
                 header('Location: applicantdashboard.php');
                 exit;
             } elseif ($user['role'] === 'Admin') {
-                header('Location: teacher_dashboard.php');
+                header('Location: admindashboard.php');
                 exit;
-            } elseif ($user['role'] === 'admin') {
-                header('Location: navigation.php');
+            } elseif ($user['role'] === 'Superadmin') {
+                header('Location: superadmindashboard.php');
                 exit;
+            } else {
+                $login_error = "Unknown role: " . htmlspecialchars($user['role']) . ". Please contact support.";
             }
         }
     } else {
@@ -186,6 +293,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
     <title>Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="./images/logo1.png">
     <style>
         :root {
             --primary-color: #4f46e5;
@@ -235,7 +343,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             z-index: 2;
         }
 
-        .login-container, .register-container {
+        .login-container, .register-container, .otp-container {
             background-color: var(--card-bg);
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 10px 15px rgba(0, 0, 0, 0.03);
@@ -246,18 +354,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             -webkit-backdrop-filter: blur(10px);
         }
 
-        .login-header, .register-header {
+        .otp-container {
+            max-width: 500px;
+        }
+
+        .login-header, .register-header, .otp-header {
             text-align: center;
             margin-bottom: 2rem;
         }
 
-        .login-header h1, .register-header h1 {
+        .login-header h1, .register-header h1, .otp-header h1 {
             font-size: 1.75rem;
             font-weight: 600;
             color: var(--text-color);
         }
 
-        .login-header p, .register-header p {
+        .login-header p, .register-header p, .otp-header p {
             color: var(--text-muted);
             font-size: 0.9rem;
             margin-top: 0.5rem;
@@ -303,7 +415,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
         }
 
-        .login-btn, .register-btn {
+        .login-btn, .register-btn, .otp-btn {
             width: 100%;
             background-color: var(--primary-color);
             color: white;
@@ -316,7 +428,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             transition: background-color 0.3s ease;
         }
 
-        .login-btn:hover, .register-btn:hover {
+        .login-btn:hover, .register-btn:hover, .otp-btn:hover {
             background-color: var(--primary-hover);
         }
 
@@ -351,6 +463,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             font-size: 0.9rem;
         }
 
+        .otp-error-message {
+            color: var(--error-color);
+            font-size: 0.85rem;
+            margin-top: 0.25rem;
+        }
+
         .register-link {
             text-align: center;
             margin-top: 1rem;
@@ -368,7 +486,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
         }
 
         /* Popup Styles */
-        .register-popup {
+        .register-popup, .otp-popup {
             display: none;
             position: fixed;
             top: 0;
@@ -381,7 +499,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             justify-content: center;
         }
 
-        .register-container {
+        .register-container, .otp-container {
             position: relative;
             max-height: 90vh;
             overflow-y: auto;
@@ -403,7 +521,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             color: var(--text-color);
         }
 
-        /* New Registration Form Styles */
+        /* Registration Form Styles */
         .form-section {
             margin-bottom: 2rem;
         }
@@ -455,13 +573,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             background-color: #5a6268;
         }
 
+        .password-requirements {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .password-requirements.invalid {
+            color: var(--error-color);
+        }
+
         @media (max-width: 768px) {
-            .login-container, .register-container {
+            .login-container, .register-container, .otp-container {
                 max-width: 90%;
                 padding: 1.5rem;
             }
 
-            .login-header h1, .register-header h1 {
+            .login-header h1, .register-header h1, .otp-header h1 {
                 font-size: 1.5rem;
             }
 
@@ -475,11 +603,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
         }
 
         @media (max-width: 480px) {
-            .login-container, .register-container {
+            .login-container, .register-container, .otp-container {
                 padding: 1rem;
             }
 
-            .login-header h1, .register-header h1 {
+            .login-header h1, .register-header h1, .otp-header h1 {
                 font-size: 1.3rem;
             }
 
@@ -493,7 +621,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             }
 
             .form-buttons .cancel-btn,
-            .form-buttons .register-btn {
+            .form-buttons .register-btn,
+            .form-buttons .otp-btn {
                 width: 100%;
             }
         }
@@ -512,7 +641,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
             
             <?php if (isset($login_error)): ?>
             <div class="error-message">
-                <?php echo $login_error; ?>
+                <?php echo htmlspecialchars($login_error); ?>
+            </div>
+            <?php endif; ?>
+            
+            <?php if (isset($_SESSION['login_success'])): ?>
+            <div class="success-message">
+                <?php echo htmlspecialchars($_SESSION['login_success']); ?>
             </div>
             <?php endif; ?>
             
@@ -544,7 +679,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
     </div>
 
     <!-- Register Popup -->
-    <div class="register-popup" id="registerPopup" <?php echo (isset($_SESSION['register_error']) || isset($_SESSION['register_success'])) ? 'style="display: flex;"' : ''; ?>>
+    <div class="register-popup" id="registerPopup" <?php echo (isset($_SESSION['show_register_popup']) && $_SESSION['show_register_popup']) ? 'style="display: flex;"' : ''; ?>>
         <div class="register-container">
             <button class="close-btn" onclick="hideRegisterPopup()">×</button>
             <div class="register-header">
@@ -552,15 +687,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
                 <p>Create your account</p>
             </div>
             
-            <?php if (isset($_SESSION['register_success'])): ?>
-            <div class="success-message">
-                <?php echo $_SESSION['register_success']; unset($_SESSION['register_success']); ?>
-            </div>
-            <?php endif; ?>
-            
             <?php if (isset($_SESSION['register_error'])): ?>
             <div class="error-message">
-                <?php echo $_SESSION['register_error']; unset($_SESSION['register_error']); ?>
+                <?php echo htmlspecialchars($_SESSION['register_error']); ?>
             </div>
             <?php endif; ?>
             
@@ -626,10 +755,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="civil-status">Civil Status</label>
+                            <label for="civil_status">Civil Status</label>
                             <div class="input-group">
                                 <i class="fas fa-ring"></i>
-                                <select id="civil-status" name="civil_status" class="form-control" required style="padding-left: 2.5rem;">
+                                <select id="civil_status" name="civil_status" class="form-control" required style="padding-left: 2.5rem;">
                                     <option value="">Select Status</option>
                                     <option value="single">Single</option>
                                     <option value="married">Married</option>
@@ -655,19 +784,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
                     </div>
                     <div class="form-row">
                         <div class="form-group full-width">
-                            <label for="place-of-birth">Place of Birth</label>
+                            <label for="place_of_birth">Place of Birth</label>
                             <div class="input-group">
                                 <i class="fas fa-map-marker-alt"></i>
-                                <input type="text" id="place-of-birth" name="place_of_birth" class="form-control" required>
+                                <input type="text" id="place_of_birth" name="place_of_birth" class="form-control" required>
                             </div>
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="contact-no">Contact No.</label>
+                            <label for="contact_no">Contact No.</label>
                             <div class="input-group">
                                 <i class="fas fa-phone"></i>
-                                <input type="tel" id="contact-no" name="contact_no" class="form-control" required>
+                                <input type="tel" id="contact_no" name="contact_no" class="form-control" required>
                             </div>
                         </div>
                         <div class="form-group">
@@ -690,14 +819,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
                             <label for="password">Password</label>
                             <div class="input-group">
                                 <i class="fas fa-lock"></i>
-                                <input type="password" id="password" name="password" class="form-control" required>
+                                <input type="password" id="password" name="password" class="form-control" required pattern="(?=.*[A-Z])(?=.*[0-9]).*" title="Password must contain at least one uppercase letter and one number">
+                            </div>
+                            <div id="password-requirements" class="password-requirements">
+                                Must contain at least one uppercase letter and one number
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="confirm-password">Confirm Password</label>
+                            <label for="confirm_password">Confirm Password</label>
                             <div class="input-group">
                                 <i class="fas fa-lock"></i>
-                                <input type="password" id="confirm-password" name="confirm_password" class="form-control" required>
+                                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
                             </div>
                         </div>
                     </div>
@@ -712,28 +844,128 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register'])) {
         </div>
     </div>
 
+
+    <div class="otp-popup" id="otpPopup" <?php echo (isset($_SESSION['show_otp_popup']) && $_SESSION['show_otp_popup']) ? 'style="display: flex;"' : ''; ?>>
+        <div class="otp-container">
+            <button class="close-btn" onclick="hideOTPPopup()">×</button>
+            <div class="otp-header">
+                <h1>Verify OTP</h1>
+                <p>Please enter the OTP sent to your email</p>
+            </div>
+            
+            <?php if (isset($_SESSION['otp_error'])): ?>
+            <div class="error-message">
+                <?php echo htmlspecialchars($_SESSION['otp_error']); ?>
+            </div>
+            <?php endif; ?>
+            
+            <form action="login.php" method="POST">
+                <div class="form-group">
+                    <label for="otp">One-Time Password (OTP)</label>
+                    <div class="input-group">
+                        <i class="fas fa-key"></i>
+                        <input type="text" id="otp" name="otp" class="form-control" required maxlength="6" pattern="\d{6}" placeholder="Enter 6-digit OTP">
+                    </div>
+                    <?php if (isset($_SESSION['otp_validation_error'])): ?>
+                    <div class="otp-error-message">
+                        <?php echo htmlspecialchars($_SESSION['otp_validation_error']); ?>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                
+                <div class="form-buttons">
+                    <button type="button" class="cancel-btn" onclick="hideOTPPopup()">Cancel</button>
+                    <button type="submit" class="otp-btn" name="verify_otp">Verify</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         function showRegisterPopup() {
-            document.getElementById('registerPopup').style.display = 'flex';
+            console.log("showRegisterPopup called"); 
+            const registerPopup = document.getElementById('registerPopup');
+            if (registerPopup) {
+                registerPopup.style.display = 'flex';
+            } else {
+                console.error("registerPopup element not found");
+            }
         }
 
         function hideRegisterPopup() {
-            document.getElementById('registerPopup').style.display = 'none';
-            <?php
-            if (isset($_SESSION['register_error'])) {
-                unset($_SESSION['register_error']);
+            console.log("hideRegisterPopup called"); 
+            const registerPopup = document.getElementById('registerPopup');
+            const otpPopup = document.getElementById('otpPopup');
+            if (registerPopup) registerPopup.style.display = 'none';
+            if (otpPopup) otpPopup.style.display = 'none';
+            fetch('clear_session.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'action=clear_register'
+            }).then(response => response.text()).then(data => {
+                console.log(data);
+            });
+        }
+
+        function showOTPPopup() {
+            console.log("showOTPPopup called"); // Debugging log
+            const otpPopup = document.getElementById('otpPopup');
+            if (otpPopup) {
+                otpPopup.style.display = 'flex';
+            } else {
+                console.error("otpPopup element not found");
             }
-            if (isset($_SESSION['register_success'])) {
-                unset($_SESSION['register_success']);
-            }
-            ?>
+        }
+
+        function hideOTPPopup() {
+            console.log("hideOTPPopup called"); // Debugging log
+            const otpPopup = document.getElementById('otpPopup');
+            const registerPopup = document.getElementById('registerPopup');
+            if (otpPopup) otpPopup.style.display = 'none';
+            if (registerPopup) registerPopup.style.display = 'none';
+            fetch('clear_session.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'action=clear_otp'
+            }).then(response => response.text()).then(data => {
+                console.log(data);
+            });
         }
 
         document.addEventListener('click', function(event) {
-            const popup = document.getElementById('registerPopup');
-            const container = document.querySelector('.register-container');
-            if (event.target === popup) {
+            const registerPopup = document.getElementById('registerPopup');
+            const otpPopup = document.getElementById('otpPopup');
+
+            if (event.target === registerPopup) {
                 hideRegisterPopup();
+            }
+            if (event.target === otpPopup) {
+                hideOTPPopup();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const passwordInput = document.getElementById('password');
+            const requirementsText = document.getElementById('password-requirements');
+
+            if (passwordInput && requirementsText) {
+                passwordInput.addEventListener('input', function() {
+                    const password = passwordInput.value;
+                    const hasUppercase = /[A-Z]/.test(password);
+                    const hasNumber = /[0-9]/.test(password);
+
+                    if (hasUppercase && hasNumber) {
+                        requirementsText.classList.remove('invalid');
+                    } else {
+                        requirementsText.classList.add('invalid');
+                    }
+                });
+            } else {
+                console.error("Password input or requirements text element not found");
             }
         });
     </script>

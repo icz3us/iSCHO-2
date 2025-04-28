@@ -1,7 +1,6 @@
 <?php
 require './route_guard.php';
 
-// Check for existing token and validate session timeout
 if (isset($_SESSION['user_id']) && isset($_SESSION['token'])) {
     $stmt = $pdo->prepare("SELECT expires_at FROM tokens WHERE user_id = ? AND token = ?");
     $stmt->execute([$_SESSION['user_id'], $_SESSION['token']]);
@@ -12,7 +11,6 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['token'])) {
         $current_time = time();
 
         if ($current_time > $expires_at) {
-            // Token has expired, destroy session and remove token
             $stmt = $pdo->prepare("DELETE FROM tokens WHERE user_id = ? AND token = ?");
             $stmt->execute([$_SESSION['user_id'], $_SESSION['token']]);
             
@@ -22,7 +20,6 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['token'])) {
             exit;
         }
     } else {
-        // Invalid token, destroy session
         $_SESSION = array();
         session_destroy();
         header('Location: login.php?message=Invalid session. Please log in again.');
@@ -32,7 +29,6 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['token'])) {
 
 // Handle logout
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-    // Delete the token from the database
     $stmt = $pdo->prepare("DELETE FROM tokens WHERE user_id = ? AND token = ?");
     $stmt->execute([$_SESSION['user_id'], $_SESSION['token']]);
     
@@ -42,24 +38,20 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     exit;
 }
 
-// Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit;
 }
 
-// Check user role
 if ($_SESSION['user_role'] !== 'Applicant') {
     header('Location: login.php');
     exit;
 }
 
-// Get user name components from session for display
 $lastname = isset($_SESSION['lastname']) ? $_SESSION['lastname'] : '';
 $firstname = isset($_SESSION['firstname']) ? $_SESSION['firstname'] : '';
 $middlename = isset($_SESSION['middlename']) ? $_SESSION['middlename'] : '';
 
-// If individual name components aren't set, try to parse from user_name
 if (empty($lastname) || empty($firstname)) {
     $user_name = isset($_SESSION['user_name']) ? $_SESSION['user_name'] : 'User';
     $name_parts = explode(',', $user_name, 2);
@@ -77,55 +69,59 @@ if (empty($full_name) || $full_name === ',') {
     $full_name = 'User';
 }
 
-// Check if user has already submitted an application and get application deadline
 $user_id = $_SESSION['user_id'];
 $has_application = false;
 $application_deadline = null;
 $is_application_open = false;
+$application_status = 'Not Yet Submitted';
+$notices = [];
 
-// Initialize variables to store existing data
-$user_info = [];
+$users_info = [];
 $user_personal = [];
 $user_residency = [];
 $user_fam = [];
 $user_docs = [];
 
 try {
-    // Check if user has an existing application
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM user_info WHERE user_id = ?");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE user_id = ?");
     $stmt->execute([$user_id]);
     $count = $stmt->fetchColumn();
     $has_application = $count > 0;
 
     if ($has_application) {
-        // Fetch existing data from all relevant tables
-        // user_info
-        $stmt = $pdo->prepare("SELECT * FROM user_info WHERE user_id = ?");
+        // Fetch user_info
+        $stmt = $pdo->prepare("SELECT * FROM users_info WHERE user_id = ?");
         $stmt->execute([$user_id]);
-        $user_info = $stmt->fetch(PDO::FETCH_ASSOC);
+        $users_info = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        // user_personal
+        // Fetch user_personal
         $stmt = $pdo->prepare("SELECT * FROM user_personal WHERE user_id = ?");
         $stmt->execute([$user_id]);
-        $user_personal = $stmt->fetch(PDO::FETCH_ASSOC);
+        $user_personal = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-        // user_residency
+        // Fetch user_residency
         $stmt = $pdo->prepare("SELECT * FROM user_residency WHERE user_id = ?");
         $stmt->execute([$user_id]);
-        $user_residency = $stmt->fetch(PDO::FETCH_ASSOC);
+        $user_residency = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-        // user_fam
+        // Fetch user_fam
         $stmt = $pdo->prepare("SELECT * FROM user_fam WHERE user_id = ?");
         $stmt->execute([$user_id]);
-        $user_fam = $stmt->fetch(PDO::FETCH_ASSOC);
+        $user_fam = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-        // user_docs
+        // Fetch user_docs
         $stmt = $pdo->prepare("SELECT * FROM user_docs WHERE user_id = ?");
         $stmt->execute([$user_id]);
-        $user_docs = $stmt->fetch(PDO::FETCH_ASSOC);
+        $user_docs = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        // Set application status, explicitly checking for NULL
+        $application_status = is_null($users_info['application_status']) ? 'Not Yet Submitted' : $users_info['application_status'];
     }
 
-    // Fetch the application deadline
+    $stmt = $pdo->prepare("SELECT message, created_at FROM notices WHERE user_id = ? ORDER BY created_at DESC");
+    $stmt->execute([$user_id]);
+    $notices = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
     $stmt = $pdo->prepare("SELECT application_deadline FROM application_period ORDER BY updated_at DESC LIMIT 1");
     $stmt->execute();
     $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -134,19 +130,18 @@ try {
         $current_date = date('Y-m-d');
         $is_application_open = $current_date <= $application_deadline;
     } else {
-        // If no deadline is set, assume applications are closed
+        $_SESSION['application_error'] = "No application period found. Please contact the administrator.";
         $is_application_open = false;
     }
 } catch (PDOException $e) {
     $_SESSION['application_error'] = "Error checking application status: " . $e->getMessage();
 }
 
-// Format the deadline for display
-$formatted_deadline = $application_deadline ? date('m/d/Y', strtotime($application_deadline)) : 'N/A';
+$formatted_deadline = $application_deadline ? date('m/d/Y', strtotime($application_deadline)) : 'Not Set';
 
 // Handle Profile Picture Upload
-if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && cirugía($_FILES['profile_picture'])) {
-    $upload_dir = './uploads/';
+if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['profile_picture'])) {
+    $upload_dir = './Uploads/';
     if (!is_dir($upload_dir)) {
         mkdir($upload_dir, 0777, true);
     }
@@ -154,50 +149,43 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && cirugía($_F
     $allowed_types = ['image/png', 'image/jpeg', 'image/jpg'];
     $max_size = 5 * 1024 * 1024; // 5MB
 
-    $upload_error = '';
     $file = $_FILES['profile_picture'];
     $file_name = basename($file['name']);
     $file_type = $file['type'];
     $file_size = $file['size'];
     $file_tmp = $file['tmp_name'];
 
-    // Validate file type
     if (!in_array($file_type, $allowed_types)) {
         $_SESSION['profile_picture_error'] = "Invalid file type for profile picture. Only PNG, JPEG allowed.";
     } elseif ($file_size > $max_size) {
         $_SESSION['profile_picture_error'] = "Profile picture is too large. Max size is 5MB.";
     } else {
-        // Generate unique file name
         $file_ext = pathinfo($file_name, PATHINFO_EXTENSION);
         $new_file_name = 'profile_picture_' . $user_id . '_' . time() . '.' . $file_ext;
         $file_path = $upload_dir . $new_file_name;
 
-        // Move the uploaded file
         if (move_uploaded_file($file_tmp, $file_path)) {
             try {
                 $pdo->beginTransaction();
 
-                if ($has_application) {
-                    // If user already has an application, update the profile picture path
+                if ($has_application && !empty($user_docs)) {
                     $stmt = $pdo->prepare("UPDATE user_docs SET profile_picture_path = ? WHERE user_id = ?");
                     $stmt->execute([$file_path, $user_id]);
 
-                    // Delete old profile picture if it exists
                     if (!empty($user_docs['profile_picture_path']) && file_exists($user_docs['profile_picture_path'])) {
                         unlink($user_docs['profile_picture_path']);
                     }
                 } else {
-                    // If no application exists, insert a new record with just the profile picture
                     $stmt = $pdo->prepare("
-                        INSERT INTO user_docs (user_id, profile_picture_path)
-                        VALUES (?, ?)
+                        INSERT INTO user_docs (user_id, profile_picture_path, cor_file_path, indigency_file_path, voter_file_path)
+                        VALUES (?, ?, '', '', '')
                         ON DUPLICATE KEY UPDATE profile_picture_path = ?
                     ");
                     $stmt->execute([$user_id, $file_path, $file_path]);
                 }
 
                 $pdo->commit();
-                $user_docs['profile_picture_path'] = $file_path; // Update local variable for display
+                $user_docs['profile_picture_path'] = $file_path;
                 $_SESSION['profile_picture_success'] = "Profile picture uploaded successfully!";
             } catch (PDOException $e) {
                 $pdo->rollBack();
@@ -214,71 +202,123 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && cirugía($_F
     exit;
 }
 
-// Handle Form Submission (only if application is open)
+// Handle Form Submission
 if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_application'])) {
     // Personal Information
-    $lastname = trim($_POST['lastname']);
-    $firstname = trim($_POST['firstname']);
-    $middlename = trim($_POST['middlename']);
-    $sex = trim($_POST['Sex']);
-    $civil_status = trim($_POST['Civil-Status']);
-    $birthdate = trim($_POST['birthdate']);
+    $lastname = trim($_POST['lastname'] ?? '');
+    $firstname = trim($_POST['firstname'] ?? '');
+    $middlename = trim($_POST['middlename'] ?? '');
+    $sex = trim($_POST['Sex'] ?? '');
+    $civil_status = trim($_POST['Civil-Status'] ?? '');
+    $birthdate = trim($_POST['birthdate'] ?? '');
+    $municipality = trim($_POST['municipality'] ?? '');
+    $barangay = trim($_POST['barangay'] ?? '');
+    $nationality = trim($_POST['nationality'] ?? '');
+    $place_of_birth = trim($_POST['place_of_birth'] ?? '');
 
     // Educational Information
-    $degree = trim($_POST['track']);
-    $course = trim($_POST['Course']);
-    $current_college = trim($_POST['secondary_school']);
+    $degree = trim($_POST['track'] ?? '');
+    $course = trim($_POST['Course'] ?? '');
+    $current_college = trim($_POST['secondary_school'] ?? '');
 
     // Residency Information
-    $permanent_address = trim($_POST['permanent_address']);
-    $residency_duration = trim($_POST['residency_duration']);
-    $registered_voter = trim($_POST['registered_voter']);
-    $father_voting_duration = isset($_POST['father_voting_duration']) ? trim($_POST['father_voting_duration']) : null;
-    $mother_voting_duration = isset($_POST['mother_voting_duration']) ? trim($_POST['mother_voting_duration']) : null;
-    $applicant_voting_duration = isset($_POST['applicant_voting_duration']) ? trim($_POST['applicant_voting_duration']) : null;
-    $guardian_name = trim($_POST['guardian_name']);
-    $relationship = trim($_POST['relationship']);
-    $guardian_address = trim($_POST['guardian_address']);
-    $guardian_contact = trim($_POST['guardian_contact']);
+    $permanent_address = trim($_POST['permanent_address'] ?? '');
+    $residency_duration = trim($_POST['residency_duration'] ?? '');
+    $registered_voter = trim($_POST['registered_voter'] ?? '');
+    $father_voting_duration = trim($_POST['father_voting_duration'] ?? null);
+    $mother_voting_duration = trim($_POST['mother_voting_duration'] ?? null);
+    $applicant_voting_duration = trim($_POST['applicant_voting_duration'] ?? null);
+    $guardian_name = trim($_POST['guardian_name'] ?? '');
+    $relationship = trim($_POST['relationship'] ?? '');
+    $guardian_address = trim($_POST['guardian_address'] ?? '');
+    $guardian_contact = trim($_POST['guardian_contact'] ?? '');
 
     // Family Background
-    $father_name = trim($_POST['father_name']);
-    $father_address = trim($_POST['father_address']);
-    $father_contact = trim($_POST['father_contact']);
-    $father_occupation = trim($_POST['father_occupation']);
-    $father_office_address = trim($_POST['father_office_address']);
-    $father_tel_no = trim($_POST['father_tel_no']);
-    $father_age = trim($_POST['father_age']);
-    $father_dob = trim($_POST['father_dob']);
-    $father_citizenship = trim($_POST['father_citizenship']);
-    $father_religion = trim($_POST['father_religion']);
+    $father_name = trim($_POST['father_name'] ?? '');
+    $father_address = trim($_POST['father_address'] ?? '');
+    $father_contact = trim($_POST['father_contact'] ?? '');
+    $father_occupation = trim($_POST['father_occupation'] ?? '');
+    $father_office_address = trim($_POST['father_office_address'] ?? '');
+    $father_tel_no = trim($_POST['father_tel_no'] ?? '');
+    $father_age = trim($_POST['father_age'] ?? '');
+    $father_dob = trim($_POST['father_dob'] ?? '');
+    $father_citizenship = trim($_POST['father_citizenship'] ?? '');
+    $father_religion = trim($_POST['father_religion'] ?? '');
 
-    $mother_name = trim($_POST['mother_name']);
-    $mother_address = trim($_POST['mother_address']);
-    $mother_contact = trim($_POST['mother_contact']);
-    $mother_occupation = trim($_POST['mother_occupation']);
-    $mother_office_address = trim($_POST['mother_office_address']);
-    $mother_tel_no = trim($_POST['mother_tel_no']);
-    $mother_age = trim($_POST['mother_age']);
-    $mother_dob = trim($_POST['mother_dob']);
-    $mother_citizenship = trim($_POST['mother_citizenship']);
-    $mother_religion = trim($_POST['mother_religion']);
+    $mother_name = trim($_POST['mother_name'] ?? '');
+    $mother_address = trim($_POST['mother_address'] ?? '');
+    $mother_contact = trim($_POST['mother_contact'] ?? '');
+    $mother_occupation = trim($_POST['mother_occupation'] ?? '');
+    $mother_office_address = trim($_POST['mother_office_address'] ?? '');
+    $mother_tel_no = trim($_POST['mother_tel_no'] ?? '');
+    $mother_age = trim($_POST['mother_age'] ?? '');
+    $mother_dob = trim($_POST['mother_dob'] ?? '');
+    $mother_citizenship = trim($_POST['mother_citizenship'] ?? '');
+    $mother_religion = trim($_POST['mother_religion'] ?? '');
+
+    // Validation
+    $required_fields = [
+        'lastname' => $lastname,
+        'firstname' => $firstname,
+        'middlename' => $middlename,
+        'sex' => $sex,
+        'civil_status' => $civil_status,
+        'birthdate' => $birthdate,
+        'municipality' => $municipality,
+        'barangay' => $barangay,
+        'nationality' => $nationality,
+        'place_of_birth' => $place_of_birth,
+        'degree' => $degree,
+        'course' => $course,
+        'current_college' => $current_college,
+        'permanent_address' => $permanent_address,
+        'residency_duration' => $residency_duration,
+        'registered_voter' => $registered_voter,
+        'guardian_name' => $guardian_name,
+        'relationship' => $relationship,
+        'guardian_address' => $guardian_address,
+        'guardian_contact' => $guardian_contact,
+        'father_name' => $father_name,
+        'father_address' => $father_address,
+        'father_contact' => $father_contact,
+        'father_occupation' => $father_occupation,
+        'father_age' => $father_age,
+        'father_dob' => $father_dob,
+        'father_citizenship' => $father_citizenship,
+        'father_religion' => $father_religion,
+        'mother_name' => $mother_name,
+        'mother_address' => $mother_address,
+        'mother_contact' => $mother_contact,
+        'mother_occupation' => $mother_occupation,
+        'mother_age' => $mother_age,
+        'mother_dob' => $mother_dob,
+        'mother_citizenship' => $mother_citizenship,
+        'mother_religion' => $mother_religion
+    ];
+
+    foreach ($required_fields as $field_name => $value) {
+        if (empty($value)) {
+            $_SESSION['application_error'] = "Missing required field: $field_name.";
+            header('Location: applicantdashboard.php?view=Application');
+            exit;
+        }
+    }
 
     // File Upload Handling
-    $upload_dir = './uploads/';
+    $upload_dir = './Uploads/';
     if (!is_dir($upload_dir)) {
         mkdir($upload_dir, 0777, true);
     }
 
     $allowed_types = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
-    $max_size = 5 * 1024 * 1024; // 5MB
+    $max_size = 5 * 1024 * 1024;
 
     $upload_error = '';
     $file_paths = [
-        'cor_file' => isset($user_docs['cor_file_path']) ? $user_docs['cor_file_path'] : '',
-        'indigency_file' => isset($user_docs['indigency_file_path']) ? $user_docs['indigency_file_path'] : '',
-        'voter_file' => isset($user_docs['voter_file_path']) ? $user_docs['voter_file_path'] : '',
-        'profile_picture' => isset($user_docs['profile_picture_path']) ? $user_docs['profile_picture_path'] : ''
+        'cor_file' => $user_docs['cor_file_path'] ?? '',
+        'indigency_file' => $user_docs['indigency_file_path'] ?? '',
+        'voter_file' => $user_docs['voter_file_path'] ?? '',
+        'profile_picture' => $user_docs['profile_picture_path'] ?? ''
     ];
 
     foreach (['cor_file', 'indigency_file', 'voter_file'] as $file_key) {
@@ -289,132 +329,189 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             $file_size = $file['size'];
             $file_tmp = $file['tmp_name'];
 
-            // Validate file type
             if (!in_array($file_type, $allowed_types)) {
                 $upload_error = "Invalid file type for $file_key. Only PDF, PNG, JPEG allowed.";
                 break;
             }
 
-            // Validate file size
             if ($file_size > $max_size) {
                 $upload_error = "File $file_key is too large. Max size is 5MB.";
                 break;
             }
 
-            // Generate unique file name to avoid overwriting
             $file_ext = pathinfo($file_name, PATHINFO_EXTENSION);
             $new_file_name = $file_key . '_' . $user_id . '_' . time() . '.' . $file_ext;
             $file_path = $upload_dir . $new_file_name;
 
-            // Move the uploaded file
             if (!move_uploaded_file($file_tmp, $file_path)) {
                 $upload_error = "Failed to upload $file_key.";
                 break;
             }
 
-            // If a new file is uploaded, delete the old file if it exists
             if (!empty($file_paths[$file_key]) && file_exists($file_paths[$file_key])) {
                 unlink($file_paths[$file_key]);
             }
 
             $file_paths[$file_key] = $file_path;
-        } elseif (!$has_application) {
+        } elseif (!$has_application && empty($file_paths[$file_key])) {
             $upload_error = "Missing required file: $file_key.";
             break;
         }
     }
 
-    // Proceed with database insertion if no upload errors
     if (empty($upload_error)) {
         try {
             $pdo->beginTransaction();
 
+            // Update users table
+            $stmt = $pdo->prepare("
+                UPDATE users
+                SET lastname = ?, firstname = ?, middlename = ?
+                WHERE id = ?
+            ");
+            $stmt->execute([$lastname, $firstname, $middlename, $user_id]);
+
             if ($has_application) {
-                // Update existing application
-                // Update user_info
+                // Update users_info
                 $stmt = $pdo->prepare("
-                    UPDATE user_info
-                    SET lastname = ?, firstname = ?, middlename = ?, sex = ?, civil_status = ?, birthdate = ?
+                    UPDATE users_info
+                    SET sex = ?, civil_status = ?, birthdate = ?, municipality = ?, barangay = ?, 
+                        nationality = ?, place_of_birth = ?, application_status = ?
                     WHERE user_id = ?
                 ");
                 $stmt->execute([
-                    $lastname, $firstname, $middlename, $sex, $civil_status, $birthdate, $user_id
+                    $sex, $civil_status, $birthdate, $municipality, $barangay, 
+                    $nationality, $place_of_birth, 'Under Review', $user_id
                 ]);
 
                 // Update user_personal
-                $stmt = $pdo->prepare("
-                    UPDATE user_personal
-                    SET degree = ?, course = ?, current_college = ?
-                    WHERE user_id = ?
-                ");
-                $stmt->execute([
-                    $degree, $course, $current_college, $user_id
-                ]);
+                if (!empty($user_personal)) {
+                    $stmt = $pdo->prepare("
+                        UPDATE user_personal
+                        SET degree = ?, course = ?, current_college = ?
+                        WHERE user_id = ?
+                    ");
+                    $stmt->execute([$degree, $course, $current_college, $user_id]);
+                } else {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO user_personal (user_id, degree, course, current_college)
+                        VALUES (?, ?, ?, ?)
+                    ");
+                    $stmt->execute([$user_id, $degree, $course, $current_college]);
+                }
 
                 // Update user_residency
-                $stmt = $pdo->prepare("
-                    UPDATE user_residency
-                    SET permanent_address = ?, residency_duration = ?, registered_voter = ?,
-                        father_voting_duration = ?, mother_voting_duration = ?, applicant_voting_duration = ?,
-                        guardian_name = ?, relationship = ?, guardian_address = ?, guardian_contact = ?
-                    WHERE user_id = ?
-                ");
-                $stmt->execute([
-                    $permanent_address, $residency_duration, $registered_voter,
-                    $father_voting_duration, $mother_voting_duration, $applicant_voting_duration,
-                    $guardian_name, $relationship, $guardian_address, $guardian_contact, $user_id
-                ]);
+                if (!empty($user_residency)) {
+                    $stmt = $pdo->prepare("
+                        UPDATE user_residency
+                        SET permanent_address = ?, residency_duration = ?, registered_voter = ?,
+                            father_voting_duration = ?, mother_voting_duration = ?, 
+                            applicant_voting_duration = ?, guardian_name = ?, relationship = ?, 
+                            guardian_address = ?, guardian_contact = ?
+                        WHERE user_id = ?
+                    ");
+                    $stmt->execute([
+                        $permanent_address, $residency_duration, $registered_voter,
+                        $father_voting_duration, $mother_voting_duration, $applicant_voting_duration,
+                        $guardian_name, $relationship, $guardian_address, $guardian_contact, $user_id
+                    ]);
+                } else {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO user_residency (
+                            user_id, permanent_address, residency_duration, registered_voter,
+                            father_voting_duration, mother_voting_duration, applicant_voting_duration,
+                            guardian_name, relationship, guardian_address, guardian_contact
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $stmt->execute([
+                        $user_id, $permanent_address, $residency_duration, $registered_voter,
+                        $father_voting_duration, $mother_voting_duration, $applicant_voting_duration,
+                        $guardian_name, $relationship, $guardian_address, $guardian_contact
+                    ]);
+                }
 
                 // Update user_fam
-                $stmt = $pdo->prepare("
-                    UPDATE user_fam
-                    SET father_name = ?, father_address = ?, father_contact = ?, father_occupation = ?,
-                        father_office_address = ?, father_tel_no = ?, father_age = ?, father_dob = ?, 
-                        father_citizenship = ?, father_religion = ?,
-                        mother_name = ?, mother_address = ?, mother_contact = ?, mother_occupation = ?,
-                        mother_office_address = ?, mother_tel_no = ?, mother_age = ?, mother_dob = ?, 
-                        mother_citizenship = ?, mother_religion = ?
-                    WHERE user_id = ?
-                ");
-                $stmt->execute([
-                    $father_name, $father_address, $father_contact, $father_occupation,
-                    $father_office_address, $father_tel_no, $father_age, $father_dob, 
-                    $father_citizenship, $father_religion,
-                    $mother_name, $mother_address, $mother_contact, $mother_occupation,
-                    $mother_office_address, $mother_tel_no, $mother_age, $mother_dob, 
-                    $mother_citizenship, $mother_religion, $user_id
-                ]);
+                if (!empty($user_fam)) {
+                    $stmt = $pdo->prepare("
+                        UPDATE user_fam
+                        SET father_name = ?, father_address = ?, father_contact = ?, father_occupation = ?,
+                            father_office_address = ?, father_tel_no = ?, father_age = ?, father_dob = ?, 
+                            father_citizenship = ?, father_religion = ?,
+                            mother_name = ?, mother_address = ?, mother_contact = ?, mother_occupation = ?,
+                            mother_office_address = ?, mother_tel_no = ?, mother_age = ?, mother_dob = ?, 
+                            mother_citizenship = ?, mother_religion = ?
+                        WHERE user_id = ?
+                    ");
+                    $stmt->execute([
+                        $father_name, $father_address, $father_contact, $father_occupation,
+                        $father_office_address, $father_tel_no, $father_age, $father_dob, 
+                        $father_citizenship, $father_religion,
+                        $mother_name, $mother_address, $mother_contact, $mother_occupation,
+                        $mother_office_address, $mother_tel_no, $mother_age, $mother_dob, 
+                        $mother_citizenship, $mother_religion, $user_id
+                    ]);
+                } else {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO user_fam (
+                            user_id, father_name, father_address, father_contact, father_occupation,
+                            father_office_address, father_tel_no, father_age, father_dob, 
+                            father_citizenship, father_religion,
+                            mother_name, mother_address, mother_contact, mother_occupation,
+                            mother_office_address, mother_tel_no, mother_age, mother_dob, 
+                            mother_citizenship, mother_religion
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $stmt->execute([
+                        $user_id, $father_name, $father_address, $father_contact, $father_occupation,
+                        $father_office_address, $father_tel_no, $father_age, $father_dob, 
+                        $father_citizenship, $father_religion,
+                        $mother_name, $mother_address, $mother_contact, $mother_occupation,
+                        $mother_office_address, $mother_tel_no, $mother_age, $mother_dob, 
+                        $mother_citizenship, $mother_religion
+                    ]);
+                }
 
                 // Update user_docs
-                $stmt = $pdo->prepare("
-                    UPDATE user_docs
-                    SET cor_file_path = ?, indigency_file_path = ?, voter_file_path = ?
-                    WHERE user_id = ?
-                ");
-                $stmt->execute([
-                    $file_paths['cor_file'], $file_paths['indigency_file'], $file_paths['voter_file'], $user_id
-                ]);
+                if (!empty($user_docs)) {
+                    $stmt = $pdo->prepare("
+                        UPDATE user_docs
+                        SET cor_file_path = ?, indigency_file_path = ?, voter_file_path = ?
+                        WHERE user_id = ?
+                    ");
+                    $stmt->execute([
+                        $file_paths['cor_file'], $file_paths['indigency_file'], 
+                        $file_paths['voter_file'], $user_id
+                    ]);
+                } else {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO user_docs (
+                            user_id, cor_file_path, indigency_file_path, voter_file_path, profile_picture_path
+                        ) VALUES (?, ?, ?, ?, ?)
+                    ");
+                    $stmt->execute([
+                        $user_id, $file_paths['cor_file'], $file_paths['indigency_file'], 
+                        $file_paths['voter_file'], $file_paths['profile_picture']
+                    ]);
+                }
             } else {
-                // Insert new application
-                // Insert into user_info
+                // Insert into users_info
                 $stmt = $pdo->prepare("
-                    INSERT INTO user_info (
-                        user_id, lastname, firstname, middlename, sex, civil_status, birthdate
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO users_info (
+                        user_id, municipality, barangay, sex, civil_status, nationality, 
+                        birthdate, place_of_birth, application_status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
-                    $user_id, $lastname, $firstname, $middlename, $sex, $civil_status, $birthdate
+                    $user_id, $municipality, $barangay, $sex, $civil_status, $nationality, 
+                    $birthdate, $place_of_birth, 'Under Review'
                 ]);
 
                 // Insert into user_personal
                 $stmt = $pdo->prepare("
-                    INSERT INTO user_personal (
-                        user_id, degree, course, current_college
-                    ) VALUES (?, ?, ?, ?)
+                    INSERT INTO user_personal (user_id, degree, course, current_college)
+                    VALUES (?, ?, ?, ?)
                 ");
-                $stmt->execute([
-                    $user_id, $degree, $course, $current_college
-                ]);
+                $stmt->execute([$user_id, $degree, $course, $current_college]);
 
                 // Insert into user_residency
                 $stmt = $pdo->prepare("
@@ -434,26 +531,31 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 $stmt = $pdo->prepare("
                     INSERT INTO user_fam (
                         user_id, father_name, father_address, father_contact, father_occupation,
-                        father_office_address, father_tel_no, father_age, father_dob, father_citizenship, father_religion,
+                        father_office_address, father_tel_no, father_age, father_dob, 
+                        father_citizenship, father_religion,
                         mother_name, mother_address, mother_contact, mother_occupation,
-                        mother_office_address, mother_tel_no, mother_age, mother_dob, mother_citizenship, mother_religion
+                        mother_office_address, mother_tel_no, mother_age, mother_dob, 
+                        mother_citizenship, mother_religion
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $user_id, $father_name, $father_address, $father_contact, $father_occupation,
-                    $father_office_address, $father_tel_no, $father_age, $father_dob, $father_citizenship, $father_religion,
+                    $father_office_address, $father_tel_no, $father_age, $father_dob, 
+                    $father_citizenship, $father_religion,
                     $mother_name, $mother_address, $mother_contact, $mother_occupation,
-                    $mother_office_address, $mother_tel_no, $mother_age, $mother_dob, $mother_citizenship, $mother_religion
+                    $mother_office_address, $mother_tel_no, $mother_age, $mother_dob, 
+                    $mother_citizenship, $mother_religion
                 ]);
 
                 // Insert into user_docs
                 $stmt = $pdo->prepare("
                     INSERT INTO user_docs (
-                        user_id, cor_file_path, indigency_file_path, voter_file_path
-                    ) VALUES (?, ?, ?, ?)
+                        user_id, cor_file_path, indigency_file_path, voter_file_path, profile_picture_path
+                    ) VALUES (?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
-                    $user_id, $file_paths['cor_file'], $file_paths['indigency_file'], $file_paths['voter_file']
+                    $user_id, $file_paths['cor_file'], $file_paths['indigency_file'], 
+                    $file_paths['voter_file'], $file_paths['profile_picture']
                 ]);
             }
 
@@ -463,16 +565,19 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             exit;
         } catch (PDOException $e) {
             $pdo->rollBack();
-            // Delete uploaded files if transaction fails
             foreach ($file_paths as $path) {
-                if (!empty($path) && file_exists($path)) {
+                if (!empty($path) && file_exists($path) && $path !== $file_paths['profile_picture']) {
                     unlink($path);
                 }
             }
             $_SESSION['application_error'] = "Application submission failed: " . $e->getMessage();
+            header('Location: applicantdashboard.php?view=Application');
+            exit;
         }
     } else {
         $_SESSION['application_error'] = $upload_error;
+        header('Location: applicantdashboard.php?view=Application');
+        exit;
     }
 }
 ?>
@@ -485,6 +590,7 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
     <title>Student Dashboard - iSCHO</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="./images/logo1.png">
     <style>
         :root {
             --primary-color: #4f46e5;
@@ -496,6 +602,10 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             --border-color: #e5e7eb;
             --error-color: #ef4444;
             --success-color: #22c55e;
+            --approved-color: #22c55e;
+            --denied-color: #ef4444;
+            --review-color: #f59e0b;
+            --not-submitted-color: #6b7280;
         }
 
         * {
@@ -706,6 +816,22 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             margin-bottom: 0.25rem;
         }
 
+        .stat-card h3.approved {
+            color: var(--approved-color);
+        }
+
+        .stat-card h3.denied {
+            color: var(--denied-color);
+        }
+
+        .stat-card h3.review {
+            color: var(--review-color);
+        }
+
+        .stat-card h3.not-submitted {
+            color: var(--not-submitted-color);
+        }
+
         .stat-card p {
             color: var(--text-muted);
             font-size: 0.9rem;
@@ -733,10 +859,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             margin-bottom: 0.75rem;
             color: var(--text-color);
             font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .notices ul li::before {
-            content: '•';
             color: var(--primary-color);
             font-weight: bold;
             display: inline-block;
@@ -744,7 +872,11 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             margin-left: -1em;
         }
 
-        /* Application Form Styles */
+        .notice-date {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
         .application-form {
             background-color: var(--card-bg);
             padding: 2rem;
@@ -931,7 +1063,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             cursor: not-allowed;
         }
 
-        /* Family Background Specific Styles */
         .family-background {
             display: flex;
             gap: 2rem;
@@ -951,7 +1082,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             color: var(--text-color);
         }
 
-        /* File Upload Styles */
         .file-upload-group {
             position: relative;
             display: flex;
@@ -1004,7 +1134,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             margin-top: 0.25rem;
         }
 
-        /* Success/Error Messages */
         .success-message {
             background-color: rgba(34, 197, 94, 0.1);
             color: var(--success-color);
@@ -1023,7 +1152,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             font-size: 0.9rem;
         }
 
-        /* Info Message for Application Status */
         .info-message {
             background-color: rgba(59, 130, 246, 0.1);
             color: #3b82f6;
@@ -1033,7 +1161,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             font-size: 0.9rem;
         }
 
-        /* Hide sections by default */
         .dashboard-content {
             display: block;
         }
@@ -1042,7 +1169,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             display: none;
         }
 
-        /* Review Section Styles */
         .form-section p {
             margin-bottom: 0.5rem;
             font-size: 0.9rem;
@@ -1193,7 +1319,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
         <form id="profilePictureForm" method="POST" enctype="multipart/form-data">
             <div class="profile-pic" style="<?php echo !empty($user_docs['profile_picture_path']) ? 'background-image: url(\'' . htmlspecialchars($user_docs['profile_picture_path']) . '\'); background-size: cover; background-position: center;' : ''; ?>">
                 <?php if (empty($user_docs['profile_picture_path'])): ?>
-                    <!-- Show initials if no profile picture -->
                     <?php echo htmlspecialchars(substr($firstname, 0, 1) . substr($lastname, 0, 1)); ?>
                 <?php endif; ?>
                 <div class="overlay">
@@ -1203,11 +1328,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             </div>
         </form>
         <div class="user-name">
-            <div><?php echo htmlspecialchars($lastname . ', ' . $firstname . ' ' . $middlename); ?></div>
+            <div><?php echo htmlspecialchars($lastname . ', ' . $firstname ); ?></div>
+            <div><?php echo htmlspecialchars($middlename); ?></div>
         </div>
         <ul>
-            <li><a onclick="showDashboard()" id="dashboardLink" class="active"><i class="fas fa-home"></i> <span>Dashboard</span></a></li>
-            <li><a onclick="showApplicationForm()" id="applyLink"><i class="fas fa-file-alt"></i> <span>Apply Scholarship</span></a></li>
+            <li><a onclick="showDashboard()" id="dashboardLink" class="active" href="?view=dash"><i class="fas fa-home"></i> <span>Dashboard</span></a></li>
+            <li><a onclick="showApplicationForm()" id="applyLink" href="?view=Application"><i class="fas fa-file-alt"></i> <span>Apply Scholarship</span></a></li>
             <li><a href="?action=logout"><i class="fas fa-sign-out-alt"></i> <span>Logout</span></a></li>
         </ul>
     </div>
@@ -1262,12 +1388,18 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             <div class="stats">
                 <div class="stat-card">
                     <i class="fas fa-file-alt"></i>
-                    <p>Applications Status</p>
-                    <h3>Under Review</h3>
+                    <p>Application Status</p>
+                    <h3 class="<?php 
+                        echo $application_status === 'Not Yet Submitted' ? 'not-submitted' : 
+                        (strtolower($application_status) === 'approved' ? 'approved' : 
+                        (strtolower($application_status) === 'denied' ? 'denied' : 'review')); 
+                    ?>">
+                        <?php echo htmlspecialchars($application_status); ?>
+                    </h3>
                 </div>
                 <div class="stat-card">
                     <i class="fas fa-bell"></i>
-                    <h3>5</h3>
+                    <h3><?php echo count($notices); ?></h3>
                     <p>New Notices</p>
                 </div>
             </div>
@@ -1276,9 +1408,16 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             <div class="section notices">
                 <h2>Important Notices</h2>
                 <ul>
-                    <li>Submit your financial documents by 15th April for Application #003.</li>
-                    <li>New scholarship opportunity available - Apply by 20th April.</li>
-                    <li>Application deadline for Spring Scholarship extended to 30th April.</li>
+                    <?php if (empty($notices)): ?>
+                        <li>No new notices available.</li>
+                    <?php else: ?>
+                        <?php foreach ($notices as $notice): ?>
+                            <li>
+                                <?php echo htmlspecialchars($notice['message']); ?>
+                                <span class="notice-date"><?php echo date('M d, Y', strtotime($notice['created_at'])); ?></span>
+                            </li>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </ul>
             </div>
         </div>
@@ -1302,7 +1441,7 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             <div class="info-message">
                 The application period has ended on <?php echo htmlspecialchars($formatted_deadline); ?>. You can no longer submit or edit your application.
             </div>
-            <?php elseif ($has_application): ?>
+            <?php elseif ($has_application && $application_status !== 'Not Yet Submitted'): ?>
             <div class="info-message">
                 You have already submitted. You can edit your application until <?php echo htmlspecialchars($formatted_deadline); ?>.
             </div>
@@ -1345,21 +1484,21 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                             <label for="lastname">Lastname <span class="required">*</span></label>
                             <div class="input-group">
                                 <i class="fas fa-user"></i>
-                                <input type="text" id="lastname" name="lastname" class="form-control" value="<?php echo htmlspecialchars($user_info['lastname'] ?? $lastname); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                                <input type="text" id="lastname" name="lastname" class="form-control" value="<?php echo htmlspecialchars($lastname); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
                             </div>
                         </div>
                         <div class="form-group">
                             <label for="firstname">Firstname <span class="required">*</span></label>
                             <div class="input-group">
                                 <i class="fas fa-user"></i>
-                                <input type="text" id="firstname" name="firstname" class="form-control" value="<?php echo htmlspecialchars($user_info['firstname'] ?? $firstname); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                                <input type="text" id="firstname" name="firstname" class="form-control" value="<?php echo htmlspecialchars($firstname); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="middlename">Middlename <span class="required">*</span></label>
+                            <label for="middlename">Middlename (N/A if None) <span class="required">*</span></label>
                             <div class="input-group">
                                 <i class="fas fa-user"></i>
-                                <input type="text" id="middlename" name="middlename" class="form-control" value="<?php echo htmlspecialchars($user_info['middlename'] ?? $middlename); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                                <input type="text" id="middlename" name="middlename" class="form-control" value="<?php echo htmlspecialchars($middlename); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
                             </div>
                         </div>
                     </div>
@@ -1370,9 +1509,9 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                                 <i class="fas fa-venus-mars"></i>
                                 <select id="Sex" name="Sex" class="form-control" required style="padding-left: 2.5rem;" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
                                     <option value="">Choose</option>
-                                    <option value="Male" <?php echo (isset($user_info['sex']) && $user_info['sex'] === 'Male') ? 'selected' : ''; ?>>Male</option>
-                                    <option value="Female" <?php echo (isset($user_info['sex']) && $user_info['sex'] === 'Female') ? 'selected' : ''; ?>>Female</option>
-                                    <option value="Others" <?php echo (isset($user_info['sex']) && $user_info['sex'] === 'Others') ? 'selected' : ''; ?>>Others</option>
+                                    <option value="male" <?php echo (isset($users_info['sex']) && $users_info['sex'] === 'male') ? 'selected' : ''; ?>>Male</option>
+                                    <option value="female" <?php echo (isset($users_info['sex']) && $users_info['sex'] === 'female') ? 'selected' : ''; ?>>Female</option>
+                                    <option value="other" <?php echo (isset($users_info['sex']) && $users_info['sex'] === 'other') ? 'selected' : ''; ?>>Other</option>
                                 </select>
                             </div>
                         </div>
@@ -1382,9 +1521,10 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                                 <i class="fas fa-heart"></i>
                                 <select id="Civil-Status" name="Civil-Status" class="form-control" required style="padding-left: 2.5rem;" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
                                     <option value="">Choose</option>
-                                    <option value="Single" <?php echo (isset($user_info['civil_status']) && $user_info['civil_status'] === 'Single') ? 'selected' : ''; ?>>Single</option>
-                                    <option value="Married" <?php echo (isset($user_info['civil_status']) && $user_info['civil_status'] === 'Married') ? 'selected' : ''; ?>>Married</option>
-                                    <option value="Divorced" <?php echo (isset($user_info['civil_status']) && $user_info['civil_status'] === 'Divorced') ? 'selected' : ''; ?>>Divorced</option>
+                                    <option value="single" <?php echo (isset($users_info['civil_status']) && $users_info['civil_status'] === 'single') ? 'selected' : ''; ?>>Single</option>
+                                    <option value="married" <?php echo (isset($users_info['civil_status']) && $users_info['civil_status'] === 'married') ? 'selected' : ''; ?>>Married</option>
+                                    <option value="divorced" <?php echo (isset($users_info['civil_status']) && $users_info['civil_status'] === 'divorced') ? 'selected' : ''; ?>>Divorced</option>
+                                    <option value="widowed" <?php echo (isset($users_info['civil_status']) && $users_info['civil_status'] === 'widowed') ? 'selected' : ''; ?>>Widowed</option>
                                 </select>
                             </div>
                         </div>
@@ -1392,13 +1532,45 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                             <label for="birthdate">Birthdate <span class="required">*</span></label>
                             <div class="input-group">
                                 <i class="fas fa-calendar-alt"></i>
-                                <input type="date" id="birthdate" name="birthdate" class="form-control" value="<?php echo htmlspecialchars($user_info['birthdate'] ?? '2000-02-09'); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                                <input type="date" id="birthdate" name="birthdate" class="form-control" value="<?php echo htmlspecialchars($users_info['birthdate'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
                             </div>
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="track">Degree<span class="required">*</span></label>
+                            <label for="municipality">Municipality <span class="required">*</span></label>
+                            <div class="input-group">
+                                <i class="fas fa-map"></i>
+                                <input type="text" id="municipality" name="municipality" class="form-control" value="<?php echo htmlspecialchars($users_info['municipality'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="barangay">Barangay <span class="required">*</span></label>
+                            <div class="input-group">
+                                <i class="fas fa-map-marker"></i>
+                                <input type="text" id="barangay" name="barangay" class="form-control" value="<?php echo htmlspecialchars($users_info['barangay'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="nationality">Nationality <span class="required">*</span></label>
+                            <div class="input-group">
+                                <i class="fas fa-flag"></i>
+                                <input type="text" id="nationality" name="nationality" class="form-control" value="<?php echo htmlspecialchars($users_info['nationality'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="place_of_birth">Place of Birth <span class="required">*</span></label>
+                            <div class="input-group">
+                                <i class="fas fa-map-pin"></i>
+                                <input type="text" id="place_of_birth" name="place_of_birth" class="form-control" value="<?php echo htmlspecialchars($users_info['place_of_birth'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="track">Degree <span class="required">*</span></label>
                             <div class="input-group">
                                 <i class="fas fa-graduation-cap"></i>
                                 <select id="track" name="track" class="form-control" required style="padding-left: 2.5rem;" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
@@ -1420,10 +1592,10 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                     </div>
                     <div class="form-row">
                         <div class="form-group full-width">
-                            <label for="Current">Current College/University <span class="required">*</span></label>
+                            <label for="secondary-school">Current College/University <span class="required">*</span></label>
                             <div class="input-group">
                                 <i class="fas fa-school"></i>
-                                <input type="text" id="secondary-school" name="secondary_school" class="form-control" value="<?php echo htmlspecialchars($user_personal['current_college'] ?? ''); ?>" placeholder="Enter your current School" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                                <input type="text" id="secondary-school" name="secondary_school" class="form-control" value="<?php echo htmlspecialchars($user_personal['current_college'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
                             </div>
                         </div>
                     </div>
@@ -1520,584 +1692,490 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                                     <option value="6" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '6') ? 'selected' : ''; ?>>6</option>
                                     <option value="7" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '7') ? 'selected' : ''; ?>>7</option>
                                     <option value="8" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '8') ? 'selected' : ''; ?>>8</option>
-                                    <option value="9" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '9') ? 'selected' : ''; ?>>9</option>
-                                    <option value="10+" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '10+') ? 'selected' : ''; ?>>10+</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="guardian-name">Please Indicate the Name of Guardian <span class="required">*</span></label>
-                            <div class="input-group">
-                                <i class="fas fa-user"></i>
-                                <input type="text" id="guardian-name" name="guardian_name" class="form-control" value="<?php echo htmlspecialchars($user_residency['guardian_name'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="relationship">Relationship to the Guardian <span class="required">*</span></label>
-                            <div class="input-group">
-                                <i class="fas fa-users"></i>
-                                <input type="text" id="relationship" name="relationship" class="form-control" value="<?php echo htmlspecialchars($user_residency['relationship'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group full-width">
-                            <label for="guardian-address">Address of Your Guardian <span class="required">*</span></label>
-                            <div class="input-group">
-                                <i class="fas fa-map-marker-alt"></i>
-                                <input type="text" id="guardian-address" name="guardian_address" class="form-control" value="<?php echo htmlspecialchars($user_residency['guardian_address'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="guardian-contact">Contact Number of Your Guardian <span class="required">*</span></label>
-                            <div class="input-group">
-                                <i class="fas fa-phone"></i>
-                                <input type="tel" id="guardian-contact" name="guardian_contact" class="form-control" value="<?php echo htmlspecialchars($user_residency['guardian_contact'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-buttons">
-                        <button type="button" class="prev-btn" onclick="prevStep(2)">Previous</button>
-                        <button type="button" class="next-btn" onclick="nextStep(2)">Next</button>
-                    </div>
-                </div>
-
-                <div class="form-section" id="step3" style="display: none;">
-                    <h3>Family Background</h3>
-                    <div class="family-background">
-                        <!-- Father's Information -->
-                        <div class="family-member">
-                            <h4>Father</h4>
-                            <div class="form-group">
-                                <label for="father-name">Name <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-user"></i>
-                                    <input type="text" id="father-name" name="father_name" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_name'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="father-address">Home Address <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-map-marker-alt"></i>
-                                    <input type="text" id="father-address" name="father_address" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_address'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="father-contact">Contact No. <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-phone"></i>
-                                    <input type="tel" id="father-contact" name="father_contact" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_contact'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="father-occupation">Present Occupation <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-briefcase"></i>
-                                    <input type="text" id="father-occupation" name="father_occupation" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_occupation'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="father-office-address">Office Address (optional)</label>
-                                <div class="input-group">
-                                    <i class="fas fa-building"></i>
-                                    <input type="text" id="father-office-address" name="father_office_address" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_office_address'] ?? ''); ?>" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                    </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="father-tel-no">Tel. No. (optional)</label>
-                                <div class="input-group">
-                                    <i class="fas fa-phone"></i>
-                                    <input type="tel" id="father-tel-no" name="father_tel_no" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_tel_no'] ?? ''); ?>" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="father-age">Age <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-sort-numeric-up"></i>
-                                    <input type="number" id="father-age" name="father_age" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_age'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="father-dob">Date of Birth <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-calendar-alt"></i>
-                                    <input type="date" id="father-dob" name="father_dob" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_dob'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="father-citizenship">Citizenship <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-flag"></i>
-                                    <input type="text" id="father-citizenship" name="father_citizenship" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_citizenship'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="father-religion">Religion <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-pray"></i>
-                                    <input type="text" id="father-religion" name="father_religion" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_religion'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Mother's Information -->
-                        <div class="family-member">
-                            <h4>Mother</h4>
-                            <div class="form-group">
-                                <label for="mother-name">Name <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-user"></i>
-                                    <input type="text" id="mother-name" name="mother_name" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_name'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="mother-address">Home Address <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-map-marker-alt"></i>
-                                    <input type="text" id="mother-address" name="mother_address" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_address'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="mother-contact">Contact No. <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-phone"></i>
-                                    <input type="tel" id="mother-contact" name="mother_contact" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_contact'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="mother-occupation">Present Occupation <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-briefcase"></i>
-                                    <input type="text" id="mother-occupation" name="mother_occupation" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_occupation'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="mother-office-address">Office Address (optional)</label>
-                                <div class="input-group">
-                                    <i class="fas fa-building"></i>
-                                    <input type="text" id="mother-office-address" name="mother_office_address" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_office_address'] ?? ''); ?>" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="mother-tel-no">Tel. No. (optional)</label>
-                                <div class="input-group">
-                                    <i class="fas fa-phone"></i>
-                                    <input type="tel" id="mother-tel-no" name="mother_tel_no" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_tel_no'] ?? ''); ?>" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="mother-age">Age <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-sort-numeric-up"></i>
-                                    <input type="number" id="mother-age" name="mother_age" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_age'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="mother-dob">Date of Birth <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-calendar-alt"></i>
-                                    <input type="date" id="mother-dob" name="mother_dob" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_dob'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="mother-citizenship">Citizenship <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-flag"></i>
-                                    <input type="text" id="mother-citizenship" name="mother_citizenship" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_citizenship'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="mother-religion">Religion <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-pray"></i>
-                                    <input type="text" id="mother-religion" name="mother_religion" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_religion'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-buttons">
-                        <button type="button" class="prev-btn" onclick="prevStep(3)">Previous</button>
-                        <button type="button" class="next-btn" onclick="nextStep(3)">Next</button>
-                    </div>
-                </div>
-
-                <!-- Step 4: Documents -->
-                <div class="form-section" id="step4" style="display: none;">
-                    <h3>Documents</h3>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="cor-file">Certificate of Registration (COR) <span class="required">*</span></label>
-                            <div class="file-upload-group">
-                                <input type="file" id="cor-file" name="cor_file" accept=".pdf,.png,.jpg,.jpeg" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                <label for="cor-file" class="file-upload-label" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <span class="file-name"><?php echo isset($user_docs['cor_file_path']) ? basename($user_docs['cor_file_path']) : 'No file selected'; ?></span>
-                            </div>
-                            <div class="file-error" id="cor-file-error"></div>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="indigency-file">Certificate of Indigency <span class="required">*</span></label>
-                            <div class="file-upload-group">
-                                <input type="file" id="indigency-file" name="indigency_file" accept=".pdf,.png,.jpg,.jpeg" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                <label for="indigency-file" class="file-upload-label" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <span class="file-name"><?php echo isset($user_docs['indigency_file_path']) ? basename($user_docs['indigency_file_path']) : 'No file selected'; ?></span>
-                            </div>
-                            <div class="file-error" id="indigency-file-error"></div>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="voter-file">Voter's Certificate <span class="required">*</span></label>
-                            <div class="file-upload-group">
-                                <input type="file" id="voter-file" name="voter_file" accept=".pdf,.png,.jpg,.jpeg" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                <label for="voter-file" class="file-upload-label" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                    <i class="fas fa-upload"></i> Upload File
-                                </label>
-                                <span class="file-name"><?php echo isset($user_docs['voter_file_path']) ? basename($user_docs['voter_file_path']) : 'No file selected'; ?></span>
-                            </div>
-                            <div class="file-error" id="voter-file-error"></div>
-                        </div>
-                    </div>
-                    <div class="form-buttons">
-                        <button type="button" class="prev-btn" onclick="prevStep(4)">Previous</button>
-                        <button type="button" class="next-btn" onclick="nextStep(4)">Next</button>
-                    </div>
-                </div>
-
-                <!-- Step 5: Review Your Application -->
-                <div class="form-section" id="step5" style="display: none;">
-                    <h3>Review Your Application</h3>
-                    <div class="form-section">
-                        <h4>Personal Information</h4>
-                        <p><strong>Lastname:</strong> <span id="review-lastname"><?php echo htmlspecialchars($user_info['lastname'] ?? $lastname); ?></span></p>
-                        <p><strong>Firstname:</strong> <span id="review-firstname"><?php echo htmlspecialchars($user_info['firstname'] ?? $firstname); ?></span></p>
-                        <p><strong>Middlename:</strong> <span id="review-middlename"><?php echo htmlspecialchars($user_info['middlename'] ?? $middlename); ?></span></p>
-                        <p><strong>Sex:</strong> <span id="review-sex"><?php echo htmlspecialchars($user_info['sex'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Civil Status:</strong> <span id="review-civil-status"><?php echo htmlspecialchars($user_info['civil_status'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Birthdate:</strong> <span id="review-birthdate"><?php echo htmlspecialchars($user_info['birthdate'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Degree:</strong> <span id="review-degree"><?php echo htmlspecialchars($user_personal['degree'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Course:</strong> <span id="review-course"><?php echo htmlspecialchars($user_personal['course'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Current College/University:</strong> <span id="review-current-college"><?php echo htmlspecialchars($user_personal['current_college'] ?? 'Not specified'); ?></span></p>
-                    </div>
-
-                    <div class="form-section">
-                        <h4>Residency</h4>
-                        <p><strong>Permanent Address:</strong> <span id="review-permanent-address"><?php echo htmlspecialchars($user_residency['permanent_address'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Residency Duration:</strong> <span id="review-residency-duration"><?php echo htmlspecialchars($user_residency['residency_duration'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Registered Voter:</strong> <span id="review-registered-voter"><?php echo htmlspecialchars($user_residency['registered_voter'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Father Voting Duration:</strong> <span id="review-father-voting-duration"><?php echo htmlspecialchars($user_residency['father_voting_duration'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Mother Voting Duration:</strong> <span id="review-mother-voting-duration"><?php echo htmlspecialchars($user_residency['mother_voting_duration'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Applicant Voting Duration:</strong> <span id="review-applicant-voting-duration"><?php echo htmlspecialchars($user_residency['applicant_voting_duration'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Guardian Name:</strong> <span id="review-guardian-name"><?php echo htmlspecialchars($userres['guardian_name'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Relationship to Guardian:</strong> <span id="review-relationship"><?php echo htmlspecialchars($user_residency['relationship'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Guardian Address:</strong> <span id="review-guardian-address"><?php echo htmlspecialchars($user_residency['guardian_address'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Guardian Contact:</strong> <span id="review-guardian-contact"><?php echo htmlspecialchars($user_residency['guardian_contact'] ?? 'Not specified'); ?></span></p>
-                    </div>
-
-                    <div class="form-section">
-                        <h4>Family Background</h4>
-                        <h5>Father</h5>
-                        <p><strong>Name:</strong> <span id="review-father-name"><?php echo htmlspecialchars($user_fam['father_name'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Home Address:</strong> <span id="review-father-address"><?php echo htmlspecialchars($user_fam['father_address'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Contact No.:</strong> <span id="review-father-contact"><?php echo htmlspecialchars($user_fam['father_contact'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Present Occupation:</strong> <span id="review-father-occupation"><?php echo htmlspecialchars($user_fam['father_occupation'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Office Address:</strong> <span id="review-father-office-address"><?php echo htmlspecialchars($user_fam['father_office_address'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Tel. No.:</strong> <span id="review-father-tel-no"><?php echo htmlspecialchars($user_fam['father_tel_no'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Age:</strong> <span id="review-father-age"><?php echo htmlspecialchars($user_fam['father_age'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Date of Birth:</strong> <span id="review-father-dob"><?php echo htmlspecialchars($user_fam['father_dob'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Citizenship:</strong> <span id="review-father-citizenship"><?php echo htmlspecialchars($user_fam['father_citizenship'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Religion:</strong> <span id="review-father-religion"><?php echo htmlspecialchars($user_fam['father_religion'] ?? 'Not specified'); ?></span></p>
-
-                        <h5>Mother</h5>
-                        <p><strong>Name:</strong> <span id="review-mother-name"><?php echo htmlspecialchars($user_fam['mother_name'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Home Address:</strong> <span id="review-mother-address"><?php echo htmlspecialchars($user_fam['mother_address'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Contact No.:</strong> <span id="review-mother-contact"><?php echo htmlspecialchars($user_fam['mother_contact'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Present Occupation:</strong> <span id="review-mother-occupation"><?php echo htmlspecialchars($user_fam['mother_occupation'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Office Address:</strong> <span id="review-mother-office-address"><?php echo htmlspecialchars($user_fam['mother_office_address'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Tel. No.:</strong> <span id="review-mother-tel-no"><?php echo htmlspecialchars($user_fam['mother_tel_no'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Age:</strong> <span id="review-mother-age"><?php echo htmlspecialchars($user_fam['mother_age'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Date of Birth:</strong> <span id="review-mother-dob"><?php echo htmlspecialchars($user_fam['mother_dob'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Citizenship:</strong> <span id="review-mother-citizenship"><?php echo htmlspecialchars($user_fam['mother_citizenship'] ?? 'Not specified'); ?></span></p>
-                        <p><strong>Religion:</strong> <span id="review-mother-religion"><?php echo htmlspecialchars($user_fam['mother_religion'] ?? 'Not specified'); ?></span></p>
-                    </div>
-
-                    <div class="form-section">
-                        <h4>Documents</h4>
-                        <p><strong>Certificate of Registration (COR):</strong> <span id="review-cor-file"><?php echo isset($user_docs['cor_file_path']) ? basename($user_docs['cor_file_path']) : 'Not uploaded'; ?></span></p>
-                        <p><strong>Certificate of Indigency:</strong> <span id="review-indigency-file"><?php echo isset($user_docs['indigency_file_path']) ? basename($user_docs['indigency_file_path']) : 'Not uploaded'; ?></span></p>
-                        <p><strong>Voter's Certificate:</strong> <span id="review-voter-file"><?php echo isset($user_docs['voter_file_path']) ? basename($user_docs['voter_file_path']) : 'Not uploaded'; ?></span></p>
-                    </div>
-
-                    <div class="form-buttons">
-                        <button type="button" class="prev-btn" onclick="prevStep(5)">Previous</button>
-                        <button type="submit" name="submit_application" class="submit-btn" <?php echo !$is_application_open ? 'disabled' : ''; ?>>Submit Application</button>
-                    </div>
-                </div>
-            </form>
+                    <option value="9" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '9') ? 'selected' : ''; ?>>9</option>
+                    <option value="10+" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '10+') ? 'selected' : ''; ?>>10+</option>
+                </select>
+            </div>
         </div>
     </div>
+    <div class="form-row">
+        <div class="form-group">
+            <h4>Guardian Information</h4>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="guardian_name">Name <span class="required">*</span></label>
+            <div class="input-group">
+                <i class="fas fa-user"></i>
+                <input type="text" id="guardian_name" name="guardian_name" class="form-control" value="<?php echo htmlspecialchars($user_residency['guardian_name'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="relationship">Relationship <span class="required">*</span></label>
+            <div class="input-group">
+                <i class="fas fa-users"></i>
+                <input type="text" id="relationship" name="relationship" class="form-control" value="<?php echo htmlspecialchars($user_residency['relationship'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+            </div>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group full-width">
+            <label for="guardian_address">Address <span class="required">*</span></label>
+            <div class="input-group">
+                <i class="fas fa-map-marker-alt"></i>
+                <input type="text" id="guardian_address" name="guardian_address" class="form-control" value="<?php echo htmlspecialchars($user_residency['guardian_address'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+            </div>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="guardian_contact">Contact Number <span class="required">*</span></label>
+            <div class="input-group">
+                <i class="fas fa-phone"></i>
+                <input type="tel" id="guardian_contact" name="guardian_contact" class="form-control" value="<?php echo htmlspecialchars($user_residency['guardian_contact'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+            </div>
+        </div>
+    </div>
+    <div class="form-buttons">
+        <button type="button" class="prev-btn" onclick="prevStep(2)">Previous</button>
+        <button type="button" class="next-btn" onclick="nextStep(2)">Next</button>
+    </div>
+</div>
 
-    <script>
-        // Navigation between dashboard and application form
-        function showDashboard() {
-            document.getElementById('dashboardContent').style.display = 'block';
-            document.getElementById('applicationForm').style.display = 'none';
-            document.getElementById('dashboardLink').classList.add('active');
-            document.getElementById('applyLink').classList.remove('active');
-        }
+<div class="form-section" id="step3" style="display: none;">
+    <h3>Family Background</h3>
+    <div class="family-background">
+        <div class="family-member">
+            <h4>Father</h4>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="father_name">Name <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="father_name" name="father_name" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_name'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="father_address">Address <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <input type="text" id="father_address" name="father_address" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_address'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="father_contact">Contact Number <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-phone"></i>
+                        <input type="tel" id="father_contact" name="father_contact" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_contact'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="father_occupation">Occupation <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-briefcase"></i>
+                        <input type="text" id="father_occupation" name="father_occupation" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_occupation'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="father_office_address">Office Address <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-building"></i>
+                        <input type="text" id="father_office_address" name="father_office_address" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_office_address'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="father_tel_no">Tel No. <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-phone"></i>
+                        <input type="tel" id="father_tel_no" name="father_tel_no" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_tel_no'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="father_age">Age <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-birthday-cake"></i>
+                        <input type="number" id="father_age" name="father_age" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_age'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="father_dob">Date of Birth <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-calendar-alt"></i>
+                        <input type="date" id="father_dob" name="father_dob" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_dob'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="father_citizenship">Citizenship <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-flag"></i>
+                        <input type="text" id="father_citizenship" name="father_citizenship" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_citizenship'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="father_religion">Religion <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-church"></i>
+                        <input type="text" id="father_religion" name="father_religion" class="form-control" value="<?php echo htmlspecialchars($user_fam['father_religion'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="family-member">
+            <h4>Mother</h4>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mother_name">Name <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-user"></i>
+                        <input type="text" id="mother_name" name="mother_name" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_name'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mother_address">Address <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <input type="text" id="mother_address" name="mother_address" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_address'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mother_contact">Contact Number <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-phone"></i>
+                        <input type="tel" id="mother_contact" name="mother_contact" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_contact'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="mother_occupation">Occupation <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-briefcase"></i>
+                        <input type="text" id="mother_occupation" name="mother_occupation" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_occupation'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mother_office_address">Office Address <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-building"></i>
+                        <input type="text" id="mother_office_address" name="mother_office_address" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_office_address'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="mother_tel_no">Tel No. <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-phone"></i>
+                        <input type="tel" id="mother_tel_no" name="mother_tel_no" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_tel_no'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mother_age">Age <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-birthday-cake"></i>
+                        <input type="number" id="mother_age" name="mother_age" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_age'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="mother_dob">Date of Birth <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-calendar-alt"></i>
+                        <input type="date" id="mother_dob" name="mother_dob" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_dob'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mother_citizenship">Citizenship <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-flag"></i>
+                        <input type="text" id="mother_citizenship" name="mother_citizenship" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_citizenship'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="mother_religion">Religion <span class="required">*</span></label>
+                    <div class="input-group">
+                        <i class="fas fa-church"></i>
+                        <input type="text" id="mother_religion" name="mother_religion" class="form-control" value="<?php echo htmlspecialchars($user_fam['mother_religion'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="form-buttons">
+        <button type="button" class="prev-btn" onclick="prevStep(3)">Previous</button>
+        <button type="button" class="next-btn" onclick="nextStep(3)">Next</button>
+    </div>
+</div>
 
-        function showApplicationForm() {
-            document.getElementById('dashboardContent').style.display = 'none';
-            document.getElementById('applicationForm').style.display = 'block';
-            document.getElementById('dashboardLink').classList.remove('active');
-            document.getElementById('applyLink').classList.add('active');
-        }
-
-        // Form step navigation
-        let currentStep = 1;
-        const totalSteps = 5;
-
-        function updateProgressBar(step) {
-            const steps = document.querySelectorAll('.progress-step');
-            steps.forEach((stepElement, index) => {
-                if (index + 1 <= step) {
-                    stepElement.classList.add('active');
-                } else {
-                    stepElement.classList.remove('active');
-                }
-            });
-        }
-
-        function nextStep(step) {
-            if (step < totalSteps) {
-                // Validate current step before proceeding
-                if (!validateStep(step)) {
-                    return;
-                }
-
-                document.getElementById(`step${step}`).style.display = 'none';
-                currentStep = step + 1;
-                document.getElementById(`step${currentStep}`).style.display = 'block';
-                updateProgressBar(currentStep);
-
-                // Update review section dynamically
-                if (currentStep === 5) {
-                    updateReviewSection();
-                }
-            }
-        }
-
-        function prevStep(step) {
-            if (step > 1) {
-                document.getElementById(`step${step}`).style.display = 'none';
-                currentStep = step - 1;
-                document.getElementById(`step${currentStep}`).style.display = 'block';
-                updateProgressBar(currentStep);
-            }
-        }
-
-        // Basic validation for each step
-        function validateStep(step) {
-            let isValid = true;
-            let errorMessage = '';
-
-            if (step === 1) {
-                const lastname = document.getElementById('lastname').value.trim();
-                const firstname = document.getElementById('firstname').value.trim();
-                const middlename = document.getElementById('middlename').value.trim();
-                const sex = document.getElementById('Sex').value;
-                const civilStatus = document.getElementById('Civil-Status').value;
-                const birthdate = document.getElementById('birthdate').value;
-                const degree = document.getElementById('track').value;
-                const course = document.getElementById('Course').value;
-                const currentCollege = document.getElementById('secondary-school').value.trim();
-
-                if (!lastname || !firstname || !middlename || !sex || !civilStatus || !birthdate || !degree || !course || !currentCollege) {
-                    isValid = false;
-                    errorMessage = 'Please fill out all required fields in Personal Information.';
-                }
-            } else if (step === 2) {
-                const permanentAddress = document.getElementById('permanent-address').value.trim();
-                const residencyDuration = document.getElementById('residency-duration').value.trim();
-                const registeredVoter = document.querySelector('input[name="registered_voter"]:checked');
-                const guardianName = document.getElementById('guardian-name').value.trim();
-                const relationship = document.getElementById('relationship').value.trim();
-                const guardianAddress = document.getElementById('guardian-address').value.trim();
-                const guardianContact = document.getElementById('guardian-contact').value.trim();
-
-                if (!permanentAddress || !residencyDuration || !registeredVoter || !guardianName || !relationship || !guardianAddress || !guardianContact) {
-                    isValid = false;
-                    errorMessage = 'Please fill out all required fields in Residency.';
-                }
-            } else if (step === 3) {
-                const fatherName = document.getElementById('father-name').value.trim();
-                const fatherAddress = document.getElementById('father-address').value.trim();
-                const fatherContact = document.getElementById('father-contact').value.trim();
-                const fatherOccupation = document.getElementById('father-occupation').value.trim();
-                const fatherAge = document.getElementById('father-age').value.trim();
-                const fatherDob = document.getElementById('father-dob').value;
-                const fatherCitizenship = document.getElementById('father-citizenship').value.trim();
-                const fatherReligion = document.getElementById('father-religion').value.trim();
-
-                const motherName = document.getElementById('mother-name').value.trim();
-                const motherAddress = document.getElementById('mother-address').value.trim();
-                const motherContact = document.getElementById('mother-contact').value.trim();
-                const motherOccupation = document.getElementById('mother-occupation').value.trim();
-                const motherAge = document.getElementById('mother-age').value.trim();
-                const motherDob = document.getElementById('mother-dob').value;
-                const motherCitizenship = document.getElementById('mother-citizenship').value.trim();
-                const motherReligion = document.getElementById('mother-religion').value.trim();
-
-                if (!fatherName || !fatherAddress || !fatherContact || !fatherOccupation || !fatherAge || !fatherDob || !fatherCitizenship || !fatherReligion ||
-                    !motherName || !motherAddress || !motherContact || !motherOccupation || !motherAge || !motherDob || !motherCitizenship || !motherReligion) {
-                    isValid = false;
-                    errorMessage = 'Please fill out all required fields in Family Background.';
-                }
-            } else if (step === 4) {
-                const corFile = document.getElementById('cor-file').files.length;
-                const indigencyFile = document.getElementById('indigency-file').files.length;
-                const voterFile = document.getElementById('voter-file').files.length;
-
-                // Check if files are uploaded or already exist
-                const corExists = <?php echo isset($user_docs['cor_file_path']) ? 'true' : 'false'; ?>;
-                const indigencyExists = <?php echo isset($user_docs['indigency_file_path']) ? 'true' : 'false'; ?>;
-                const voterExists = <?php echo isset($user_docs['voter_file_path']) ? 'true' : 'false'; ?>;
-
-                if (!corFile && !corExists) {
-                    isValid = false;
-                    document.getElementById('cor-file-error').textContent = 'Please upload your Certificate of Registration.';
-                }
-                if (!indigencyFile && !indigencyExists) {
-                    isValid = false;
-                    document.getElementById('indigency-file-error').textContent = 'Please upload your Certificate of Indigency.';
-                }
-                if (!voterFile && !voterExists) {
-                    isValid = false;
-                    document.getElementById('voter-file-error').textContent = 'Please upload your Voter\'s Certificate.';
-                }
-            }
-
-            if (!isValid) {
-                alert(errorMessage);
-            }
-
-            return isValid;
-        }
-
-        // Update review section dynamically
-        function updateReviewSection() {
-            // Personal Information
-            document.getElementById('review-lastname').textContent = document.getElementById('lastname').value || 'Not specified';
-            document.getElementById('review-firstname').textContent = document.getElementById('firstname').value || 'Not specified';
-            document.getElementById('review-middlename').textContent = document.getElementById('middlename').value || 'Not specified';
-            document.getElementById('review-sex').textContent = document.getElementById('Sex').value || 'Not specified';
-            document.getElementById('review-civil-status').textContent = document.getElementById('Civil-Status').value || 'Not specified';
-            document.getElementById('review-birthdate').textContent = document.getElementById('birthdate').value || 'Not specified';
-            document.getElementById('review-degree').textContent = document.getElementById('track').value || 'Not specified';
-            document.getElementById('review-course').textContent = document.getElementById('Course').value || 'Not specified';
-            document.getElementById('review-current-college').textContent = document.getElementById('secondary-school').value || 'Not specified';
-
-            // Residency
-            document.getElementById('review-permanent-address').textContent = document.getElementById('permanent-address').value || 'Not specified';
-            document.getElementById('review-residency-duration').textContent = document.getElementById('residency-duration').value || 'Not specified';
-            const registeredVoter = document.querySelector('input[name="registered_voter"]:checked');
-            document.getElementById('review-registered-voter').textContent = registeredVoter ? registeredVoter.value : 'Not specified';
-            document.getElementById('review-father-voting-duration').textContent = document.getElementById('father_voting_duration').value || 'Not specified';
-            document.getElementById('review-mother-voting-duration').textContent = document.getElementById('mother_voting_duration').value || 'Not specified';
-            document.getElementById('review-applicant-voting-duration').textContent = document.getElementById('applicant_voting_duration').value || 'Not specified';
-            document.getElementById('review-guardian-name').textContent = document.getElementById('guardian-name').value || 'Not specified';
-            document.getElementById('review-relationship').textContent = document.getElementById('relationship').value || 'Not specified';
-            document.getElementById('review-guardian-address').textContent = document.getElementById('guardian-address').value || 'Not specified';
-            document.getElementById('review-guardian-contact').textContent = document.getElementById('guardian-contact').value || 'Not specified';
-
-            // Family Background
-            document.getElementById('review-father-name').textContent = document.getElementById('father-name').value || 'Not specified';
-            document.getElementById('review-father-address').textContent = document.getElementById('father-address').value || 'Not specified';
-            document.getElementById('review-father-contact').textContent = document.getElementById('father-contact').value || 'Not specified';
-            document.getElementById('review-father-occupation').textContent = document.getElementById('father-occupation').value || 'Not specified';
-            document.getElementById('review-father-office-address').textContent = document.getElementById('father-office-address').value || 'Not specified';
-            document.getElementById('review-father-tel-no').textContent = document.getElementById('father-tel-no').value || 'Not specified';
-            document.getElementById('review-father-age').textContent = document.getElementById('father-age').value || 'Not specified';
-            document.getElementById('review-father-dob').textContent = document.getElementById('father-dob').value || 'Not specified';
-            document.getElementById('review-father-citizenship').textContent = document.getElementById('father-citizenship').value || 'Not specified';
-            document.getElementById('review-father-religion').textContent = document.getElementById('father-religion').value || 'Not specified';
-
-            document.getElementById('review-mother-name').textContent = document.getElementById('mother-name').value || 'Not specified';
-            document.getElementById('review-mother-address').textContent = document.getElementById('mother-address').value || 'Not specified';
-            document.getElementById('review-mother-contact').textContent = document.getElementById('mother-contact').value || 'Not specified';
-            document.getElementById('review-mother-occupation').textContent = document.getElementById('mother-occupation').value || 'Not specified';
-            document.getElementById('review-mother-office-address').textContent = document.getElementById('mother-office-address').value || 'Not specified';
-            document.getElementById('review-mother-tel-no').textContent = document.getElementById('mother-tel-no').value || 'Not specified';
-            document.getElementById('review-mother-age').textContent = document.getElementById('mother-age').value || 'Not specified';
-            document.getElementById('review-mother-dob').textContent = document.getElementById('mother-dob').value || 'Not specified';
-            document.getElementById('review-mother-citizenship').textContent = document.getElementById('mother-citizenship').value || 'Not specified';
-            document.getElementById('review-mother-religion').textContent = document.getElementById('mother-religion').value || 'Not specified';
-
-            // Documents
-            const corFile = document.getElementById('cor-file').files[0];
-            document.getElementById('review-cor-file').textContent = corFile ? corFile.name : '<?php echo isset($user_docs['cor_file_path']) ? basename($user_docs['cor_file_path']) : 'Not uploaded'; ?>';
-            const indigencyFile = document.getElementById('indigency-file').files[0];
-            document.getElementById('review-indigency-file').textContent = indigencyFile ? indigencyFile.name : '<?php echo isset($user_docs['indigency_file_path']) ? basename($user_docs['indigency_file_path']) : 'Not uploaded'; ?>';
-            const voterFile = document.getElementById('voter-file').files[0];
-            document.getElementById('review-voter-file').textContent = voterFile ? voterFile.name : '<?php echo isset($user_docs['voter_file_path']) ? basename($user_docs['voter_file_path']) : 'Not uploaded'; ?>';
-        }
-
-        // Update file name display on file input change
-        document.querySelectorAll('input[type="file"]').forEach(input => {
-            input.addEventListener('change', function() {
-                const fileNameSpan = this.parentElement.querySelector('.file-name');
-                const fileError = this.parentElement.nextElementSibling;
-                fileError.textContent = ''; 
-
-                if (this.files.length > 0) {
-                    const file = this.files[0];
-                    const allowedTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
-                    const maxSize = 5 * 1024 * 1024; 
-
-                    if (!allowedTypes.includes(file.type)) {
-                        fileError.textContent = 'Invalid file type. Only PDF, PNG, JPEG allowed.';
-                        this.value = '';
-                        fileNameSpan.textContent = 'No file selected';
-                        return;
-                    }
-
-                    if (file.size > maxSize) {
-                        fileError.textContent = 'File is too large. Max size is 5MB.';
-                        this.value = '';
-                        fileNameSpan.textContent = 'No file selected';
-                        return;
-                    }
-
-                    fileNameSpan.textContent = file.name;
-                } else {
-                    fileNameSpan.textContent = 'No file selected';
-                }
-            });
-        });
-    
-        document.querySelector('.profile-pic').addEventListener('click', function() {
-            if (<?php echo $is_application_open ? 'true' : 'false'; ?>) {
-                document.getElementById('profile-picture').click();
-            }
-        });
-
-        document.addEventListener('DOMContentLoaded', function() {
-            updateProgressBar(currentStep);
-            <?php if ($has_application): ?>
-                showApplicationForm();
+<div class="form-section" id="step4" style="display: none;">
+    <h3>Documents</h3>
+    <div class="form-row">
+        <div class="form-group full-width">
+            <label for="cor_file">Certificate of Registration (COR) <span class="required">*</span></label>
+            <div class="file-upload-group">
+                <input type="file" id="cor_file" name="cor_file" accept=".pdf,.png,.jpg,.jpeg" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                <label for="cor_file" class="file-upload-label" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    <i class="fas fa-upload"></i> Choose File
+                </label>
+                <span class="file-name"><?php echo !empty($user_docs['cor_file_path']) ? basename($user_docs['cor_file_path']) : 'No file chosen'; ?></span>
+            </div>
+            <?php if (isset($_SESSION['application_error']) && strpos($_SESSION['application_error'], 'cor_file') !== false): ?>
+                <div class="file-error"><?php echo $_SESSION['application_error']; ?></div>
             <?php endif; ?>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group full-width">
+            <label for="indigency_file">Certificate of Indigency <span class="required">*</span></label>
+            <div class="file-upload-group">
+                <input type="file" id="indigency_file" name="indigency_file" accept=".pdf,.png,.jpg,.jpeg" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                <label for="indigency_file" class="file-upload-label" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    <i class="fas fa-upload"></i> Choose File
+                </label>
+                <span class="file-name"><?php echo !empty($user_docs['indigency_file_path']) ? basename($user_docs['indigency_file_path']) : 'No file chosen'; ?></span>
+            </div>
+            <?php if (isset($_SESSION['application_error']) && strpos($_SESSION['application_error'], 'indigency_file') !== false): ?>
+                <div class="file-error"><?php echo $_SESSION['application_error']; ?></div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group full-width">
+            <label for="voter_file">Voter's Certificate <span class="required">*</span></label>
+            <div class="file-upload-group">
+                <input type="file" id="voter_file" name="voter_file" accept=".pdf,.png,.jpg,.jpeg" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                <label for="voter_file" class="file-upload-label" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                    <i class="fas fa-upload"></i> Choose File
+                </label>
+                <span class="file-name"><?php echo !empty($user_docs['voter_file_path']) ? basename($user_docs['voter_file_path']) : 'No file chosen'; ?></span>
+            </div>
+            <?php if (isset($_SESSION['application_error']) && strpos($_SESSION['application_error'], 'voter_file') !== false): ?>
+                <div class="file-error"><?php echo $_SESSION['application_error']; ?></div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <div class="form-buttons">
+        <button type="button" class="prev-btn" onclick="prevStep(4)">Previous</button>
+        <button type="button" class="next-btn" onclick="nextStep(4)">Next</button>
+    </div>
+</div>
+
+<!-- Replace the existing step5 form-section with this -->
+<div class="form-section" id="step5" style="display: none;">
+    <h3>Review and Submit</h3>
+    <div class="form-row">
+        <div class="form-group full-width">
+            <h4>Personal Information</h4>
+            <p><strong>Lastname:</strong> <span id="review_lastname"><?php echo htmlspecialchars($lastname); ?></span></p>
+            <p><strong>Firstname:</strong> <span id="review_firstname"><?php echo htmlspecialchars($firstname); ?></span></p>
+            <p><strong>Middlename:</strong> <span id="review_middlename"><?php echo htmlspecialchars($middlename); ?></span></p>
+            <p><strong>Sex:</strong> <span id="review_sex"><?php echo htmlspecialchars($users_info['sex'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Civil Status:</strong> <span id="review_civil_status"><?php echo htmlspecialchars($users_info['civil_status'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Birthdate:</strong> <span id="review_birthdate"><?php echo htmlspecialchars($users_info['birthdate'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Municipality:</strong> <span id="review_municipality"><?php echo htmlspecialchars($users_info['municipality'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Barangay:</strong> <span id="review_barangay"><?php echo htmlspecialchars($users_info['barangay'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Nationality:</strong> <span id="review_nationality"><?php echo htmlspecialchars($users_info['nationality'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Place of Birth:</strong> <span id="review_place_of_birth"><?php echo htmlspecialchars($users_info['place_of_birth'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Degree:</strong> <span id="review_degree"><?php echo htmlspecialchars($user_personal['degree'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Course:</strong> <span id="review_course"><?php echo htmlspecialchars($user_personal['course'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Current College:</strong> <span id="review_current_college"><?php echo htmlspecialchars($user_personal['current_college'] ?? 'Not provided'); ?></span></p>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group full-width">
+            <h4>Residency</h4>
+            <p><strong>Permanent Address:</strong> <span id="review_permanent_address"><?php echo htmlspecialchars($user_residency['permanent_address'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Residency Duration:</strong> <span id="review_residency_duration"><?php echo htmlspecialchars($user_residency['residency_duration'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Registered Voter:</strong> <span id="review_registered_voter"><?php echo htmlspecialchars($user_residency['registered_voter'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Father Voting Duration:</strong> <span id="review_father_voting_duration"><?php echo htmlspecialchars($user_residency['father_voting_duration'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Mother Voting Duration:</strong> <span id="review_mother_voting_duration"><?php echo htmlspecialchars($user_residency['mother_voting_duration'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Applicant Voting Duration:</strong> <span id="review_applicant_voting_duration"><?php echo htmlspecialchars($user_residency['applicant_voting_duration'] ?? 'Not provided'); ?></span></p>
+            <h5>Guardian Information</h5>
+            <p><strong>Name:</strong> <span id="review_guardian_name"><?php echo htmlspecialchars($user_residency['guardian_name'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Relationship:</strong> <span id="review_relationship"><?php echo htmlspecialchars($user_residency['relationship'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Address:</strong> <span id="review_guardian_address"><?php echo htmlspecialchars($user_residency['guardian_address'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Contact Number:</strong> <span id="review_guardian_contact"><?php echo htmlspecialchars($user_residency['guardian_contact'] ?? 'Not provided'); ?></span></p>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group full-width">
+            <h4>Family Background</h4>
+            <h5>Father</h5>
+            <p><strong>Name:</strong> <span id="review_father_name"><?php echo htmlspecialchars($user_fam['father_name'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Address:</strong> <span id="review_father_address"><?php echo htmlspecialchars($user_fam['father_address'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Contact Number:</strong> <span id="review_father_contact"><?php echo htmlspecialchars($user_fam['father_contact'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Occupation:</strong> <span id="review_father_occupation"><?php echo htmlspecialchars($user_fam['father_occupation'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Office Address:</strong> <span id="review_father_office_address"><?php echo htmlspecialchars($user_fam['father_office_address'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Tel No.:</strong> <span id="review_father_tel_no"><?php echo htmlspecialchars($user_fam['father_tel_no'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Age:</strong> <span id="review_father_age"><?php echo htmlspecialchars($user_fam['father_age'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Date of Birth:</strong> <span id="review_father_dob"><?php echo htmlspecialchars($user_fam['father_dob'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Citizenship:</strong> <span id="review_father_citizenship"><?php echo htmlspecialchars($user_fam['father_citizenship'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Religion:</strong> <span id="review_father_religion"><?php echo htmlspecialchars($user_fam['father_religion'] ?? 'Not provided'); ?></span></p>
+            <h5>Mother</h5>
+            <p><strong>Name:</strong> <span id="review_mother_name"><?php echo htmlspecialchars($user_fam['mother_name'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Address:</strong> <span id="review_mother_address"><?php echo htmlspecialchars($user_fam['mother_address'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Contact Number:</strong> <span id="review_mother_contact"><?php echo htmlspecialchars($user_fam['mother_contact'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Occupation:</strong> <span id="review_mother_occupation"><?php echo htmlspecialchars($user_fam['mother_occupation'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Office Address:</strong> <span id="review_mother_office_address"><?php echo htmlspecialchars($user_fam['mother_office_address'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Tel No.:</strong> <span id="review_mother_tel_no"><?php echo htmlspecialchars($user_fam['mother_tel_no'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Age:</strong> <span id="review_mother_age"><?php echo htmlspecialchars($user_fam['mother_age'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Date of Birth:</strong> <span id="review_mother_dob"><?php echo htmlspecialchars($user_fam['mother_dob'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Citizenship:</strong> <span id="review_mother_citizenship"><?php echo htmlspecialchars($user_fam['mother_citizenship'] ?? 'Not provided'); ?></span></p>
+            <p><strong>Religion:</strong> <span id="review_mother_religion"><?php echo htmlspecialchars($user_fam['mother_religion'] ?? 'Not provided'); ?></span></p>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group full-width">
+            <h4>Documents</h4>
+            <p><strong>Certificate of Registration:</strong> <span id="review_cor_file"><?php echo !empty($user_docs['cor_file_path']) ? htmlspecialchars(basename($user_docs['cor_file_path'])) : 'Not uploaded'; ?></span></p>
+            <p><strong>Certificate of Indigency:</strong> <span id="review_indigency_file"><?php echo !empty($user_docs['indigency_file_path']) ? htmlspecialchars(basename($user_docs['indigency_file_path'])) : 'Not uploaded'; ?></span></p>
+            <p><strong>Voter's Certificate:</strong> <span id="review_voter_file"><?php echo !empty($user_docs['voter_file_path']) ? htmlspecialchars(basename($user_docs['voter_file_path'])) : 'Not uploaded'; ?></span></p>
+        </div>
+    </div>
+    <div class="form-buttons">
+        <button type="button" class="prev-btn" onclick="prevStep(5)">Previous</button>
+        <button type="submit" name="submit_application" class="submit-btn" <?php echo !$is_application_open ? 'disabled' : ''; ?>>Submit Application</button>
+    </div>
+</div>
+
+<script>
+    let currentStep = 1;
+
+    function showStep(step) {
+        document.querySelectorAll('.form-section').forEach(section => {
+            section.style.display = 'none';
         });
-    </script>
-</body>
-</html>
+        document.getElementById(`step${step}`).style.display = 'block';
+
+        document.querySelectorAll('.progress-step').forEach((stepElement, index) => {
+            stepElement.classList.toggle('active', index + 1 <= step);
+        });
+
+        if (step === 5) {
+            updateReviewSection();
+        }
+
+        currentStep = step;
+    }
+
+    function nextStep(current) {
+        if (current < 5) {
+            showStep(current + 1);
+        }
+    }
+
+    function prevStep(current) {
+        if (current > 1) {
+            showStep(current - 1);
+        }
+    }
+
+    function updateReviewSection() {
+        // Personal Information
+        document.getElementById('review_lastname').textContent = document.getElementById('lastname').value || 'Not provided';
+        document.getElementById('review_firstname').textContent = document.getElementById('firstname').value || 'Not provided';
+        document.getElementById('review_middlename').textContent = document.getElementById('middlename').value || 'Not provided';
+        document.getElementById('review_sex').textContent = document.getElementById('Sex').value || 'Not provided';
+        document.getElementById('review_civil_status').textContent = document.getElementById('Civil-Status').value || 'Not provided';
+        document.getElementById('review_birthdate').textContent = document.getElementById('birthdate').value || 'Not provided';
+        document.getElementById('review_municipality').textContent = document.getElementById('municipality').value || 'Not provided';
+        document.getElementById('review_barangay').textContent = document.getElementById('barangay').value || 'Not provided';
+        document.getElementById('review_nationality').textContent = document.getElementById('nationality').value || 'Not provided';
+        document.getElementById('review_place_of_birth').textContent = document.getElementById('place_of_birth').value || 'Not provided';
+        document.getElementById('review_degree').textContent = document.getElementById('track').value || 'Not provided';
+        document.getElementById('review_course').textContent = document.getElementById('Course').value || 'Not provided';
+        document.getElementById('review_current_college').textContent = document.getElementById('secondary-school').value || 'Not provided';
+
+        // Residency
+        document.getElementById('review_permanent_address').textContent = document.getElementById('permanent-address').value || 'Not provided';
+        document.getElementById('review_residency_duration').textContent = document.getElementById('residency-duration').value || 'Not provided';
+        const registeredVoter = document.querySelector('input[name="registered_voter"]:checked');
+        document.getElementById('review_registered_voter').textContent = registeredVoter ? registeredVoter.value : 'Not provided';
+        document.getElementById('review_father_voting_duration').textContent = document.getElementById('father_voting_duration').value || 'Not provided';
+        document.getElementById('review_mother_voting_duration').textContent = document.getElementById('mother_voting_duration').value || 'Not provided';
+        document.getElementById('review_applicant_voting_duration').textContent = document.getElementById('applicant_voting_duration').value || 'Not provided';
+        document.getElementById('review_guardian_name').textContent = document.getElementById('guardian_name').value || 'Not provided';
+        document.getElementById('review_relationship').textContent = document.getElementById('relationship').value || 'Not provided';
+        document.getElementById('review_guardian_address').textContent = document.getElementById('guardian_address').value || 'Not provided';
+        document.getElementById('review_guardian_contact').textContent = document.getElementById('guardian_contact').value || 'Not provided';
+
+        // Family Background - Father
+        document.getElementById('review_father_name').textContent = document.getElementById('father_name').value || 'Not provided';
+        document.getElementById('review_father_address').textContent = document.getElementById('father_address').value || 'Not provided';
+        document.getElementById('review_father_contact').textContent = document.getElementById('father_contact').value || 'Not provided';
+        document.getElementById('review_father_occupation').textContent = document.getElementById('father_occupation').value || 'Not provided';
+        document.getElementById('review_father_office_address').textContent = document.getElementById('father_office_address').value || 'Not provided';
+        document.getElementById('review_father_tel_no').textContent = document.getElementById('father_tel_no').value || 'Not provided';
+        document.getElementById('review_father_age').textContent = document.getElementById('father_age').value || 'Not provided';
+        document.getElementById('review_father_dob').textContent = document.getElementById('father_dob').value || 'Not provided';
+        document.getElementById('review_father_citizenship').textContent = document.getElementById('father_citizenship').value || 'Not provided';
+        document.getElementById('review_father_religion').textContent = document.getElementById('father_religion').value || 'Not provided';
+
+        // Family Background - Mother
+        document.getElementById('review_mother_name').textContent = document.getElementById('mother_name').value || 'Not provided';
+        document.getElementById('review_mother_address').textContent = document.getElementById('mother_address').value || 'Not provided';
+        document.getElementById('review_mother_contact').textContent = document.getElementById('mother_contact').value || 'Not provided';
+        document.getElementById('review_mother_occupation').textContent = document.getElementById('mother_occupation').value || 'Not provided';
+        document.getElementById('review_mother_office_address').textContent = document.getElementById('mother_office_address').value || 'Not provided';
+        document.getElementById('review_mother_tel_no').textContent = document.getElementById('mother_tel_no').value || 'Not provided';
+        document.getElementById('review_mother_age').textContent = document.getElementById('mother_age').value || 'Not provided';
+        document.getElementById('review_mother_dob').textContent = document.getElementById('mother_dob').value || 'Not provided';
+        document.getElementById('review_mother_citizenship').textContent = document.getElementById('mother_citizenship').value || 'Not provided';
+        document.getElementById('review_mother_religion').textContent = document.getElementById('mother_religion').value || 'Not provided';
+
+        // Documents
+        document.getElementById('review_cor_file').textContent = document.getElementById('cor_file').files.length > 0 ? document.getElementById('cor_file').files[0].name : '<?php echo !empty($user_docs['cor_file_path']) ? htmlspecialchars(basename($user_docs['cor_file_path'])) : 'Not uploaded'; ?>';
+        document.getElementById('review_indigency_file').textContent = document.getElementById('indigency_file').files.length > 0 ? document.getElementById('indigency_file').files[0].name : '<?php echo !empty($user_docs['indigency_file_path']) ? htmlspecialchars(basename($user_docs['indigency_file_path'])) : 'Not uploaded'; ?>';
+        document.getElementById('review_voter_file').textContent = document.getElementById('voter_file').files.length > 0 ? document.getElementById('voter_file').files[0].name : '<?php echo !empty($user_docs['voter_file_path']) ? htmlspecialchars(basename($user_docs['voter_file_path'])) : 'Not uploaded'; ?>';
+    }
+
+    function showDashboard() {
+        document.getElementById('dashboardContent').style.display = 'block';
+        document.getElementById('applicationForm').style.display = 'none';
+        document.getElementById('dashboardLink').classList.add('active');
+        document.getElementById('applyLink').classList.remove('active');
+    }
+
+    function showApplicationForm() {
+        document.getElementById('dashboardContent').style.display = 'none';
+        document.getElementById('applicationForm').style.display = 'block';
+        document.getElementById('applyLink').classList.add('active');
+        document.getElementById('dashboardLink').classList.remove('active');
+        showStep(1);
+    }
+
+    document.querySelectorAll('.file-upload-group input[type="file"]').forEach(input => {
+        input.addEventListener('change', function() {
+            const fileName = this.files.length > 0 ? this.files[0].name : 'No file chosen';
+            this.nextElementSibling.nextElementSibling.textContent = fileName;
+        });
+    });
+
+    document.querySelector('.profile-pic').addEventListener('click', function() {
+        if (!<?php echo json_encode(!$is_application_open); ?>) {
+            document.getElementById('profile-picture').click();
+        }
+    });
+
+    <?php if (isset($_GET['view']) && $_GET['view'] === 'Application'): ?>
+        showApplicationForm();
+    <?php else: ?>
+        showDashboard();
+    <?php endif; ?>
+</script>
