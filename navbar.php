@@ -95,7 +95,7 @@
   <div class="nav-links" id="nav-links">
     <a href="home.php">Home</a>
     <a href="about_us.php">About</a>
-    <a href="#">Procedure</a>
+    <a href="procedure.php">Procedure</a>
     <a href="login.php">Login</a>
   </div>
 </nav>

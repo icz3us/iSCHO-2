@@ -1,20 +1,33 @@
 <?php
 require './route_guard.php';
 require 'vendor/autoload.php'; 
+require 'philippine_locations.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-function generateToken() {
-    return bin2hex(random_bytes(32)); 
-}
+date_default_timezone_set('Asia/Manila'); 
 
 function generateOTP() {
     return str_pad(mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+}
+
+function generateJWT($user_id, $role) {
+    $key = 'b7e2c1f4a8d9e3f6c2b1a7e5d4c3f8b9e6a2c7d1f3b5e9a4c8d2f7b3e1a6c4d5'; 
+    $payload = [
+        'iss' => 'ischobsit',
+        'iat' => time(),
+        'exp' => time() + 1800, 
+        'sub' => $user_id,
+        'role' => $role
+    ];
+    return JWT::encode($payload, $key, 'HS256');
 }
 
 function sendOTP($email, $otp) {
@@ -65,7 +78,42 @@ function sendOTP($email, $otp) {
     }
 }
 
+function validateName($name) {
+    if (preg_match('/[0-9]/', $name)) {
+        return false;
+    }
+ 
+    if (preg_match('/[^a-zA-Z\s\-\']/', $name)) {
+        return false;
+    }
+    return true;
+}
+
+function validatePhilippineNumber($number) {
+
+    $number = preg_replace('/[\s\-\(\)]/', '', $number);
+    
+    
+    if (!preg_match('/^(\+63|09)\d{9}$/', $number)) {
+        return false;
+    }
+    return true;
+}
+
+function validateAge($birthdate) {
+    $birth = new DateTime($birthdate);
+    $today = new DateTime();
+    $age = $today->diff($birth)->y;
+    
+    return ($age >= 16 && $age <= 100);
+}
+
+function validatePhilippineLocation($municipality, $barangay) {
+    return validateLocation($municipality, $barangay);
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset($_POST['verify_otp'])) {
+    error_log("Registration handler triggered");
     $municipality = trim($_POST['municipality']);
     $barangay = trim($_POST['barangay']);
     $firstname = trim($_POST['firstname']);
@@ -78,12 +126,36 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset(
     $place_of_birth = trim($_POST['place_of_birth']);
     $contact_no = trim($_POST['contact_no']);
     $email = trim($_POST['email']);
-    $username = trim($_POST['username']);
     $password = trim($_POST['password']);
     $confirm_password = trim($_POST['confirm_password']);
 
     $register_error = '';
 
+    // Validate names
+    if (!validateName($firstname)) {
+        $register_error = "First name should not contain numbers or special characters.";
+    } elseif (!validateName($lastname)) {
+        $register_error = "Last name should not contain numbers or special characters.";
+    } elseif (!empty($middlename) && !validateName($middlename)) {
+        $register_error = "Middle name should not contain numbers or special characters.";
+    }
+
+    // Validate Philippine phone number
+    if (!validatePhilippineNumber($contact_no)) {
+        $register_error = "Please enter a valid Philippine mobile number (e.g., 09XXXXXXXXX or +639XXXXXXXXX).";
+    }
+
+    // Validate age
+    if (!validateAge($birthdate)) {
+        $register_error = "You must be at least 16 years old and not older than 100 years to register.";
+    }
+
+    // Validate Philippine location
+    if (!validatePhilippineLocation($municipality, $barangay)) {
+        $register_error = "Please enter a valid Philippine municipality/city and barangay.";
+    }
+
+    // Existing password validation
     if (!preg_match('/[A-Z]/', $password) || !preg_match('/[0-9]/', $password)) {
         $register_error = "Password must contain at least one uppercase letter and one number.";
     }
@@ -92,20 +164,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset(
         $register_error = "Passwords do not match.";
     }
 
+    // Existing email check
     $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
     $stmt->execute([$email]);
     if ($stmt->fetch()) {
         $register_error = "Email is already registered.";
     }
 
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
-    $stmt->execute([$username]);
-    if ($stmt->fetch()) {
-        $register_error = "Username is already taken.";
-    }
-
     if (empty($register_error)) {
-
         $otp = generateOTP();
         $expires_at = date('Y-m-d H:i:s', strtotime('+10 minutes'));
 
@@ -122,21 +188,37 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset(
             'place_of_birth' => $place_of_birth,
             'contact_no' => $contact_no,
             'email' => $email,
-            'username' => $username,
-            'password' => $password,
-            'otp' => $otp,
-            'otp_expires_at' => $expires_at
+            'password' => $password
         ];
 
-        $email_result = sendOTP($email, $otp);
-        if ($email_result !== true) {
-            $register_error = $email_result;
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO otp_verifications (email, otp, expires_at, user_id)
+                VALUES (?, ?, ?, NULL)
+            ");
+            $stmt->execute([$email, $otp, $expires_at]);
+            error_log("OTP stored successfully for email: $email, OTP: $otp, Expires At: $expires_at");
+        } catch (PDOException $e) {
+            $register_error = "Failed to store OTP: " . $e->getMessage();
+            error_log("OTP Storage Error: " . $e->getMessage());
             unset($_SESSION['pending_registration']);
             $_SESSION['show_register_popup'] = true; 
-        } else {
-            $_SESSION['otp_email'] = $email;
-            $_SESSION['show_otp_popup'] = true;
-            $_SESSION['show_register_popup'] = true; 
+        }
+
+        if (empty($register_error)) {
+            $email_result = sendOTP($email, $otp);
+            if ($email_result !== true) {
+                $register_error = $email_result;
+                error_log("Email Sending Error: $register_error");
+                unset($_SESSION['pending_registration']);
+                $_SESSION['show_register_popup'] = true; 
+            } else {
+                $_SESSION['otp_email'] = $email;
+                $_SESSION['otp_verification_pending'] = true; 
+                $_SESSION['show_otp_popup'] = true;
+                $_SESSION['show_register_popup'] = false; 
+                error_log("OTP email sent successfully to: $email");
+            }
         }
     }
 
@@ -146,92 +228,174 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset(
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp'])) {
-
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset($_SESSION['otp_verification_pending'])) {
+    error_log("OTP verification handler triggered");
     if (!isset($_SESSION['pending_registration'])) {
         $_SESSION['otp_error'] = "Registration data not found. Please try registering again.";
         unset($_SESSION['otp_email']);
+        unset($_SESSION['otp_verification_pending']);
         unset($_SESSION['show_otp_popup']);
         $_SESSION['show_register_popup'] = false; 
+        error_log("OTP Verification Failed: Registration data not found in session");
     } else {
         $otp_code = trim($_POST['otp']);
         $email = $_SESSION['otp_email'];
         $pending_data = $_SESSION['pending_registration'];
 
-        $otp_input_str = (string)$otp_code;
- 
-        error_log("OTP Verification Attempt - Email: $email, Input OTP: $otp_code, Session OTP: " . $pending_data['otp'] . ", Expires At: " . $pending_data['otp_expires_at'] . ", Current Time: " . time() . ", Expires Timestamp: " . strtotime($pending_data['otp_expires_at']));
+        try {
+            $stmt = $pdo->prepare("
+                SELECT id, otp, expires_at, verified
+                FROM otp_verifications
+                WHERE email = ? AND verified = 0
+                ORDER BY created_at DESC
+                LIMIT 1
+            ");
+            $stmt->execute([$email]);
+            $otp_record = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($otp_input_str != $db_otp_str || strtotime($pending_data['otp_expires_at']) <= time()) {
-
-            $_SESSION['otp_validation_error'] = "Wrong OTP, Please try again";
-            error_log("OTP Verification Failed - Email: $email, Input OTP: $otp_code");
-            $_SESSION['show_otp_popup'] = true; 
-            $_SESSION['show_register_popup'] = true; 
-        } else {
-
-            try {
-                $pdo->beginTransaction();
-
-                $hashed_password = password_hash($pending_data['password'], PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare("
-                    INSERT INTO users (
-                        firstname, lastname, middlename, contact_no, email, username, password, role, otp, otp_expires_at, otp_verified
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $stmt->execute([
-                    $pending_data['firstname'],
-                    $pending_data['lastname'],
-                    $pending_data['middlename'],
-                    $pending_data['contact_no'],
-                    $pending_data['email'],
-                    $pending_data['username'],
-                    $hashed_password,
-                    'Applicant',
-                    $pending_data['otp'],
-                    $pending_data['otp_expires_at'],
-
-                ]);
-
-                $user_id = $pdo->lastInsertId();
-
-                $stmt = $pdo->prepare("
-                    INSERT INTO users_info (
-                        user_id, municipality, barangay, sex, civil_status, nationality, birthdate, place_of_birth
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $stmt->execute([
-                    $user_id,
-                    $pending_data['municipality'],
-                    $pending_data['barangay'],
-                    $pending_data['sex'],
-                    $pending_data['civil_status'],
-                    $pending_data['nationality'],
-                    $pending_data['birthdate'],
-                    $pending_data['place_of_birth']
-                ]);
-
-                $pdo->commit();
-
-                $_SESSION['login_success'] = "Registered Successfully, Please Login";
-
-                unset($_SESSION['pending_registration']);
-                unset($_SESSION['otp_email']);
-                $_SESSION['show_otp_popup'] = false; 
-                $_SESSION['show_register_popup'] = false; 
-            } catch (PDOException $e) {
-                $pdo->rollBack();
-                $_SESSION['otp_error'] = "Failed to complete registration: " . $e->getMessage();
-                error_log("Registration Error: " . $e->getMessage());
+            if (!$otp_record) {
+                $stmt = $pdo->prepare("SELECT id, otp, expires_at, verified FROM otp_verifications WHERE email = ? ORDER BY created_at DESC LIMIT 1");
+                $stmt->execute([$email]);
+                $debug_record = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($debug_record) {
+                    error_log("OTP Debug - Record found but not matched: Email: $email, OTP: {$debug_record['otp']}, Verified: {$debug_record['verified']}, Expires At: {$debug_record['expires_at']}");
+                    $_SESSION['otp_error'] = "No valid OTP found for this email. The OTP may have been used or expired.";
+                } else {
+                    error_log("OTP Debug - No OTP record found for email: $email");
+                    $_SESSION['otp_error'] = "No OTP record exists for this email. Please try registering again.";
+                }
                 $_SESSION['show_otp_popup'] = true; 
-                $_SESSION['show_register_popup'] = true; 
+                $_SESSION['show_register_popup'] = false; 
+            } else {
+                $stored_otp = (string)$otp_record['otp'];
+                $otp_input = (string)$otp_code;
+                $expires_at = strtotime($otp_record['expires_at']);
+                $current_time = time();
+
+                error_log("OTP Verification Attempt - Email: $email, Input OTP: $otp_input, Stored OTP: $stored_otp, Expires At: " . $otp_record['expires_at'] . ", Current Time: $current_time, Expires Timestamp: $expires_at");
+
+                if ($otp_input !== $stored_otp) {
+                    $_SESSION['otp_validation_error'] = "Invalid OTP. Please try again.";
+                    error_log("OTP Verification Failed - Email: $email, Input OTP: $otp_input, Stored OTP: $stored_otp");
+                    $_SESSION['show_otp_popup'] = true; 
+                    $_SESSION['show_register_popup'] = false; 
+                } elseif ($expires_at <= $current_time) {
+                    $_SESSION['otp_validation_error'] = "OTP has expired. Please request a new one.";
+                    error_log("OTP Verification Failed - OTP Expired for Email: $email");
+                    $_SESSION['show_otp_popup'] = true; 
+                    $_SESSION['show_register_popup'] = false; 
+                } else {
+                    $transactionStarted = false;
+                    try {
+                        $pdo->exec("SET autocommit = 0");
+                        error_log("Autocommit disabled for email: $email");
+
+                        if ($pdo->inTransaction()) {
+                            $pdo->exec("SET autocommit = 1");
+                            throw new PDOException("A transaction is already active. Cannot start a new one.");
+                        }
+
+                        $pdo->beginTransaction();
+                        $transactionStarted = true;
+                        error_log("Transaction started successfully for email: $email");
+
+                        $hashed_password = password_hash($pending_data['password'], PASSWORD_DEFAULT);
+                        $stmt = $pdo->prepare("
+                            INSERT INTO users (
+                                firstname, lastname, middlename, contact_no, email, password, role
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ");
+                        $stmt->execute([
+                            $pending_data['firstname'],
+                            $pending_data['lastname'],
+                            $pending_data['middlename'],
+                            $pending_data['contact_no'],
+                            $pending_data['email'],
+                            $hashed_password,
+                            'Applicant'
+                        ]);
+
+                        $user_id = $pdo->lastInsertId();
+                        error_log("Inserted into users table, user_id: $user_id");
+
+                        $stmt = $pdo->prepare("
+                            INSERT INTO users_info (
+                                user_id, municipality, barangay, sex, civil_status, nationality, birthdate, place_of_birth
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ");
+                        $stmt->execute([
+                            $user_id,
+                            $pending_data['municipality'],
+                            $pending_data['barangay'],
+                            $pending_data['sex'],
+                            $pending_data['civil_status'],
+                            $pending_data['nationality'],
+                            $pending_data['birthdate'],
+                            $pending_data['place_of_birth']
+                        ]);
+                        error_log("Inserted into users_info table for user_id: $user_id");
+
+                        $stmt = $pdo->prepare("
+                            UPDATE otp_verifications
+                            SET verified = 1, user_id = ?
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$user_id, $otp_record['id']]);
+                        error_log("Updated otp_verifications, set verified = 1 and user_id = $user_id for OTP record id: " . $otp_record['id']);
+
+                        $pdo->commit();
+                        error_log("Transaction committed successfully for email: $email, user_id: $user_id");
+
+                        $pdo->exec("SET autocommit = 1");
+                        error_log("Autocommit restored for email: $email");
+
+                        $_SESSION['login_success'] = "Registered Successfully, Please Login";
+
+                        unset($_SESSION['pending_registration']);
+                        unset($_SESSION['otp_email']);
+                        unset($_SESSION['otp_verification_pending']);
+                        unset($_SESSION['show_otp_popup']);
+                        unset($_SESSION['show_register_popup']);
+                        unset($_SESSION['register_error']);
+                        unset($_SESSION['otp_error']);
+                        unset($_SESSION['otp_validation_error']);
+
+                        error_log("Registration Successful - Email: $email, User ID: $user_id");
+                    } catch (PDOException $e) {
+                        if ($transactionStarted) {
+                            try {
+                                $pdo->rollBack();
+                                error_log("Transaction rolled back due to error: " . $e->getMessage());
+                            } catch (PDOException $rollbackError) {
+                                error_log("Rollback Error: " . $rollbackError->getMessage());
+                            }
+                        }
+                        try {
+                            $pdo->exec("SET autocommit = 1");
+                            error_log("Autocommit restored after failure for email: $email");
+                        } catch (PDOException $autocommitError) {
+                            error_log("Failed to restore autocommit: " . $autocommitError->getMessage());
+                        }
+                        $_SESSION['otp_error'] = "Failed to complete registration: " . $e->getMessage();
+                        error_log("Registration Error: " . $e->getMessage());
+                        $_SESSION['show_otp_popup'] = true; 
+                        $_SESSION['show_register_popup'] = false; 
+                    }
+                }
             }
+        } catch (PDOException $e) {
+            $_SESSION['otp_error'] = "Failed to verify OTP: " . $e->getMessage();
+            error_log("OTP Verification Error: " . $e->getMessage());
+            $_SESSION['show_otp_popup'] = true; 
+            $_SESSION['show_register_popup'] = false; 
         }
     }
 }
 
-
+// Handle Login
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset($_POST['verify_otp'])) {
+    error_log("Login handler triggered");
     $email = $_POST['email'];
     $password = $_POST['password'];
 
@@ -240,23 +404,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($user && password_verify($password, $user['password'])) {
-
-        $token = generateToken();
-        $expires_at = date('Y-m-d H:i:s', strtotime('+30 minutes'));
-
-        try {
-
-            $stmt = $pdo->prepare("
-                INSERT INTO tokens (user_id, token, expires_at)
-                VALUES (?, ?, ?)
-            ");
-            $result = $stmt->execute([$user['id'], $token, $expires_at]);
-        } catch (PDOException $e) {
-            $login_error = "Failed to create session token: " . $e->getMessage();
-            error_log("Token Insert Error: " . $e->getMessage());
-        }
-
-        if (empty($login_error)) {
+        $token = generateJWT($user['id'], $user['role']);
+        // No need to insert token into the database for stateless JWT
 
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['firstname'] = $user['firstname'];
@@ -264,7 +413,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             $_SESSION['middlename'] = $user['middlename'];
             $_SESSION['user_role'] = $user['role'];
             $_SESSION['token'] = $token;
-
 
             if ($user['role'] === 'Applicant') {
                 header('Location: applicantdashboard.php');
@@ -277,11 +425,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                 exit;
             } else {
                 $login_error = "Unknown role: " . htmlspecialchars($user['role']) . ". Please contact support.";
-            }
         }
     } else {
         $login_error = "Invalid email or password";
     }
+}
+
+// Add this after your existing PHP code but before the HTML
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'get_barangays') {
+    // Prevent any output before headers
+    ob_clean();
+    
+    // Set headers
+    header('Content-Type: application/json');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    try {
+        if (!isset($_POST['municipality']) || empty($_POST['municipality'])) {
+            throw new Exception('Municipality is required');
+        }
+
+        $municipality = trim($_POST['municipality']);
+        $barangays = getBarangays($municipality);
+        
+        if (empty($barangays)) {
+            throw new Exception('No barangays found for the selected municipality');
+        }
+        
+        echo json_encode($barangays);
+    } catch (Exception $e) {
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+    exit;
 }
 ?>
 
@@ -389,9 +564,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
 
         .input-group {
             position: relative;
+            display: flex;
+            align-items: center;
         }
 
-        .input-group i {
+        .input-group i:not(.toggle-password) {
             position: absolute;
             top: 50%;
             left: 1rem;
@@ -401,7 +578,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
 
         .form-control {
             width: 100%;
-            padding: 0.75rem 1rem 0.75rem 2.5rem;
+            padding: 0.75rem 2.5rem 0.75rem 2.5rem;
             border: 1px solid var(--border-color);
             border-radius: 8px;
             font-size: 1rem;
@@ -413,6 +590,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             outline: none;
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 1rem;
+        }
+
+        .toggle-password:hover {
+            color: var(--text-color);
         }
 
         .login-btn, .register-btn, .otp-btn {
@@ -485,7 +676,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             text-decoration: underline;
         }
 
-        /* Popup Styles */
         .register-popup, .otp-popup {
             display: none;
             position: fixed;
@@ -497,12 +687,51 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             z-index: 1000;
             align-items: center;
             justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+
+        .register-popup.active, .otp-popup.active {
+            opacity: 1;
+            visibility: visible;
         }
 
         .register-container, .otp-container {
             position: relative;
             max-height: 90vh;
             overflow-y: auto;
+            transform: scale(0.7);
+            opacity: 0;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+
+        .register-popup.active .register-container,
+        .otp-popup.active .otp-container {
+            transform: scale(1);
+            opacity: 1;
+        }
+
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.7);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes modalFadeOut {
+            from {
+                opacity: 1;
+                transform: scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: scale(0.7);
+            }
         }
 
         .close-btn {
@@ -521,7 +750,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             color: var(--text-color);
         }
 
-        /* Registration Form Styles */
         .form-section {
             margin-bottom: 2rem;
         }
@@ -581,6 +809,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
 
         .password-requirements.invalid {
             color: var(--error-color);
+        }
+
+        .validation-text {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+            transition: color 0.3s ease;
+        }
+
+        .validation-text.invalid {
+            color: var(--error-color);
+        }
+
+        .validation-text.valid {
+            color: var(--success-color);
         }
 
         @media (max-width: 768px) {
@@ -647,7 +890,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             
             <?php if (isset($_SESSION['login_success'])): ?>
             <div class="success-message">
-                <?php echo htmlspecialchars($_SESSION['login_success']); ?>
+                <?php echo htmlspecialchars($_SESSION['login_success']); unset($_SESSION['login_success']); ?>
             </div>
             <?php endif; ?>
             
@@ -661,10 +904,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                 </div>
                 
                 <div class="form-group">
-                    <label for="password">Password</label>
+                    <label for="login-password">Password</label>
                     <div class="input-group">
                         <i class="fas fa-lock"></i>
-                        <input type="password" id="password" name="password" class="form-control" required>
+                        <input type="password" id="login-password" name="password" class="form-control" required>
+                        <i class="fas fa-eye toggle-password" onclick="togglePassword('login-password')"></i>
                     </div>
                 </div>
                 
@@ -693,7 +937,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             </div>
             <?php endif; ?>
             
-            <form action="login.php" method="POST">
+            <form action="login.php" method="POST" id="registerForm">
                 <!-- Residency Section -->
                 <div class="form-section">
                     <h3>Residency</h3>
@@ -702,14 +946,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                             <label for="municipality">Municipality</label>
                             <div class="input-group">
                                 <i class="fas fa-map-marker-alt"></i>
-                                <input type="text" id="municipality" name="municipality" class="form-control" required>
+                                <select id="municipality" name="municipality" class="form-control" required style="padding-left: 2.5rem;">
+                                    <option value="">Select Municipality</option>
+                                    <?php
+                                    $municipalities = getAllMunicipalities();
+                                    foreach ($municipalities as $mun) {
+                                        echo "<option value='" . htmlspecialchars($mun) . "'>" . htmlspecialchars($mun) . "</option>";
+                                    }
+                                    ?>
+                                </select>
                             </div>
                         </div>
                         <div class="form-group">
                             <label for="barangay">Barangay</label>
                             <div class="input-group">
                                 <i class="fas fa-map-marker-alt"></i>
-                                <input type="text" id="barangay" name="barangay" class="form-control" required>
+                                <select id="barangay" name="barangay" class="form-control" required style="padding-left: 2.5rem;" disabled>
+                                    <option value="">Select Barangay</option>
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -725,6 +979,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                                 <i class="fas fa-user"></i>
                                 <input type="text" id="firstname" name="firstname" class="form-control" required>
                             </div>
+                            <div class="validation-text" id="firstname-validation">Should not contain numbers or special characters</div>
                         </div>
                         <div class="form-group">
                             <label for="lastname">Last Name</label>
@@ -732,6 +987,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                                 <i class="fas fa-user"></i>
                                 <input type="text" id="lastname" name="lastname" class="form-control" required>
                             </div>
+                            <div class="validation-text" id="lastname-validation">Should not contain numbers or special characters</div>
                         </div>
                         <div class="form-group">
                             <label for="middlename">Middle Name</label>
@@ -739,6 +995,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                                 <i class="fas fa-user"></i>
                                 <input type="text" id="middlename" name="middlename" class="form-control">
                             </div>
+                            <div class="validation-text" id="middlename-validation">Should not contain numbers or special characters</div>
                         </div>
                     </div>
                     <div class="form-row">
@@ -780,6 +1037,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                                 <i class="fas fa-calendar-alt"></i>
                                 <input type="date" id="birthdate" name="birthdate" class="form-control" required>
                             </div>
+                            <div class="validation-text" id="birthdate-validation">Must be at least 16 years old and not older than 100 years</div>
                         </div>
                     </div>
                     <div class="form-row">
@@ -798,6 +1056,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                                 <i class="fas fa-phone"></i>
                                 <input type="tel" id="contact_no" name="contact_no" class="form-control" required>
                             </div>
+                            <div class="validation-text" id="contact-validation">Must be a valid Philippine mobile number (e.g., 09XXXXXXXXX or +639XXXXXXXXX)</div>
                         </div>
                         <div class="form-group">
                             <label for="email">Email Address</label>
@@ -809,42 +1068,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="username">Username</label>
-                            <div class="input-group">
-                                <i class="fas fa-user"></i>
-                                <input type="text" id="username" name="username" class="form-control" required>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="password">Password</label>
+                            <label for="reg-password">Password</label>
                             <div class="input-group">
                                 <i class="fas fa-lock"></i>
-                                <input type="password" id="password" name="password" class="form-control" required pattern="(?=.*[A-Z])(?=.*[0-9]).*" title="Password must contain at least one uppercase letter and one number">
+                                <input type="password" id="reg-password" name="password" class="form-control" required pattern="(?=.*[A-Z])(?=.*[0-9]).*" title="Password must contain at least one uppercase letter and one number">
+                                <i class="fas fa-eye toggle-password" onclick="togglePassword('reg-password')"></i>
                             </div>
-                            <div id="password-requirements" class="password-requirements">
-                                Must contain at least one uppercase letter and one number
-                            </div>
+                            <div class="validation-text" id="password-validation">Must contain at least one uppercase letter and one number</div>
                         </div>
                         <div class="form-group">
-                            <label for="confirm_password">Confirm Password</label>
+                            <label for="reg-confirm-password">Confirm Password</label>
                             <div class="input-group">
                                 <i class="fas fa-lock"></i>
-                                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
+                                <input type="password" id="reg-confirm-password" name="confirm_password" class="form-control" required>
+                                <i class="fas fa-eye toggle-password" onclick="togglePassword('reg-confirm-password')"></i>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Form Buttons -->
-                <div class="form-buttons">
-                    <button type="button" class="cancel-btn" onclick="hideRegisterPopup()">Cancel</button>
-                    <button type="submit" class="register-btn" name="register">Register</button>
+                <div class="register-checks-actions" style="display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; width: 100%;">
+                    <div class="form-group" style="margin-bottom: 0.5rem; width: 100%;">
+                        <label style="display: flex; align-items: center; font-size: 0.95rem;">
+                            <input type="checkbox" id="agree_terms" style="margin-right: 0.5rem;">
+                            I Agree To <a href="#" id="termsLink" style="color: var(--primary-color); text-decoration: underline; cursor: pointer; margin-left: 0.2rem;">Terms and Conditions</a>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 1rem; width: 100%;">
+                        <label style="display: flex; align-items: center; font-size: 0.95rem;">
+                            <input type="checkbox" id="agree_privacy" style="margin-right: 0.5rem;">
+                            I hereby consent to the collection and use of my data in compliance with the Data Privacy Act of 2012.
+                        </label>
+                    </div>
+                    <div class="form-buttons" style="width: 100%; display: flex; flex-direction: row; gap: 1rem;">
+                        <button type="button" class="cancel-btn" onclick="hideRegisterPopup()">Cancel</button>
+                        <button type="submit" class="register-btn" name="register" id="registerBtn" disabled style="background-color: #bdbdbd; cursor: not-allowed;">Register</button>
+                    </div>
                 </div>
             </form>
         </div>
     </div>
 
-
+    <!-- OTP Popup -->
     <div class="otp-popup" id="otpPopup" <?php echo (isset($_SESSION['show_otp_popup']) && $_SESSION['show_otp_popup']) ? 'style="display: flex;"' : ''; ?>>
         <div class="otp-container">
             <button class="close-btn" onclick="hideOTPPopup()">×</button>
@@ -859,7 +1124,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             </div>
             <?php endif; ?>
             
-            <form action="login.php" method="POST">
+            <form action="login.php" method="POST" id="otpForm">
                 <div class="form-group">
                     <label for="otp">One-Time Password (OTP)</label>
                     <div class="input-group">
@@ -881,12 +1146,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
         </div>
     </div>
 
+    <!-- Terms and Conditions Modal -->
+    <div id="termsModal" style="display:none; position:fixed; z-index:2000; left:0; top:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+        <div style="background:#fff; padding:2rem; border-radius:10px; max-width:600px; width:90%; position:relative;">
+            <span onclick="closeTermsModal()" style="position:absolute; top:10px; right:20px; font-size:2rem; cursor:pointer;">&times;</span>
+            <h2 style="margin-bottom:1rem;">Terms and Conditions</h2>
+            <div style="max-height:60vh; overflow-y:auto; text-align:left; font-size:1rem;">
+                <ol>
+                    <li><b>Eligibility:</b> Only qualified students may apply for the scholarship. Providing false information will result in disqualification.</li>
+                    <li><b>Document Submission:</b> All required documents must be submitted in the specified format and within the application period.</li>
+                    <li><b>Data Usage:</b> Your personal data will be used solely for scholarship processing and will not be shared with unauthorized parties.</li>
+                    <li><b>Application Review:</b> Submission does not guarantee approval. All applications are subject to review and verification by the administrators.</li>
+                    <li><b>Notification:</b> Applicants will be notified of their application status via the portal and/or email.</li>
+                    <li><b>Claiming Scholarship:</b> Approved applicants must present the required documents and QR code to claim their scholarship.</li>
+                    <li><b>Changes to Terms:</b> The scholarship provider reserves the right to modify these terms at any time. Continued use of the portal constitutes acceptance of any changes.</li>
+                </ol>
+                <p style="margin-top:1rem; font-size:0.95rem; color:#666;">By registering, you acknowledge that you have read, understood, and agreed to these terms and conditions.</p>
+            </div>
+        </div>
+    </div>
+
     <script>
         function showRegisterPopup() {
             console.log("showRegisterPopup called"); 
             const registerPopup = document.getElementById('registerPopup');
             if (registerPopup) {
                 registerPopup.style.display = 'flex';
+                setTimeout(() => {
+                    registerPopup.classList.add('active');
+                }, 10);
             } else {
                 console.error("registerPopup element not found");
             }
@@ -896,8 +1184,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             console.log("hideRegisterPopup called"); 
             const registerPopup = document.getElementById('registerPopup');
             const otpPopup = document.getElementById('otpPopup');
-            if (registerPopup) registerPopup.style.display = 'none';
-            if (otpPopup) otpPopup.style.display = 'none';
+            
+            if (registerPopup) {
+                registerPopup.classList.remove('active');
+                setTimeout(() => {
+                    registerPopup.style.display = 'none';
+                }, 300);
+            }
+            
+            if (otpPopup) {
+                otpPopup.classList.remove('active');
+                setTimeout(() => {
+                    otpPopup.style.display = 'none';
+                }, 300);
+            }
+
             fetch('clear_session.php', {
                 method: 'POST',
                 headers: {
@@ -910,21 +1211,37 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
         }
 
         function showOTPPopup() {
-            console.log("showOTPPopup called"); // Debugging log
+            console.log("showOTPPopup called"); 
             const otpPopup = document.getElementById('otpPopup');
             if (otpPopup) {
                 otpPopup.style.display = 'flex';
+                setTimeout(() => {
+                    otpPopup.classList.add('active');
+                }, 10);
             } else {
                 console.error("otpPopup element not found");
             }
         }
 
         function hideOTPPopup() {
-            console.log("hideOTPPopup called"); // Debugging log
+            console.log("hideOTPPopup called"); 
             const otpPopup = document.getElementById('otpPopup');
             const registerPopup = document.getElementById('registerPopup');
-            if (otpPopup) otpPopup.style.display = 'none';
-            if (registerPopup) registerPopup.style.display = 'none';
+            
+            if (otpPopup) {
+                otpPopup.classList.remove('active');
+                setTimeout(() => {
+                    otpPopup.style.display = 'none';
+                }, 300);
+            }
+            
+            if (registerPopup) {
+                registerPopup.classList.remove('active');
+                setTimeout(() => {
+                    registerPopup.style.display = 'none';
+                }, 300);
+            }
+
             fetch('clear_session.php', {
                 method: 'POST',
                 headers: {
@@ -936,21 +1253,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             });
         }
 
-        document.addEventListener('click', function(event) {
-            const registerPopup = document.getElementById('registerPopup');
-            const otpPopup = document.getElementById('otpPopup');
-
-            if (event.target === registerPopup) {
-                hideRegisterPopup();
+        function togglePassword(inputId) {
+            console.log("togglePassword called for inputId:", inputId);
+            const input = document.getElementById(inputId);
+            const icon = input.nextElementSibling;
+            if (!input || !icon) {
+                console.error("Input or icon not found for inputId:", inputId);
+                return;
             }
-            if (event.target === otpPopup) {
-                hideOTPPopup();
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
             }
-        });
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
-            const passwordInput = document.getElementById('password');
-            const requirementsText = document.getElementById('password-requirements');
+            const passwordInput = document.getElementById('reg-password');
+            const requirementsText = document.getElementById('password-validation');
 
             if (passwordInput && requirementsText) {
                 passwordInput.addEventListener('input', function() {
@@ -967,7 +1291,209 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             } else {
                 console.error("Password input or requirements text element not found");
             }
+
+            // Check if OTP popup should be shown
+            <?php if (isset($_SESSION['show_otp_popup']) && $_SESSION['show_otp_popup']): ?>
+            showOTPPopup();
+            <?php endif; ?>
+
+            // Check if register popup should be shown
+            <?php if (isset($_SESSION['show_register_popup']) && $_SESSION['show_register_popup']): ?>
+            showRegisterPopup();
+            <?php endif; ?>
         });
+
+        function validateNameInput(input) {
+            const value = input.value;
+            const hasNumber = /[0-9]/.test(value);
+            const hasSpecialChar = /[^a-zA-Z\s\-\']/.test(value);
+            const validationText = document.getElementById(input.id + '-validation');
+            
+            if (hasNumber || hasSpecialChar) {
+                input.setCustomValidity('Name should not contain numbers or special characters');
+                validationText.classList.add('invalid');
+                validationText.classList.remove('valid');
+            } else {
+                input.setCustomValidity('');
+                validationText.classList.remove('invalid');
+                validationText.classList.add('valid');
+            }
+        }
+
+        function validatePhoneNumber(input) {
+            const value = input.value.replace(/[\s\-\(\)]/g, '');
+            const isValid = /^(\+63|09)\d{9}$/.test(value);
+            const validationText = document.getElementById('contact-validation');
+            
+            if (!isValid) {
+                input.setCustomValidity('Please enter a valid Philippine mobile number (e.g., 09XXXXXXXXX or +639XXXXXXXXX)');
+                validationText.classList.add('invalid');
+                validationText.classList.remove('valid');
+            } else {
+                input.setCustomValidity('');
+                validationText.classList.remove('invalid');
+                validationText.classList.add('valid');
+            }
+        }
+
+        function validateBirthdate(input) {
+            const birthdate = new Date(input.value);
+            const today = new Date();
+            const age = today.getFullYear() - birthdate.getFullYear();
+            const validationText = document.getElementById('birthdate-validation');
+            
+            if (age < 16 || age > 100) {
+                input.setCustomValidity('You must be at least 16 years old and not older than 100 years');
+                validationText.classList.add('invalid');
+                validationText.classList.remove('valid');
+            } else {
+                input.setCustomValidity('');
+                validationText.classList.remove('invalid');
+                validationText.classList.add('valid');
+            }
+        }
+
+        function validatePassword(input) {
+            const password = input.value;
+            const hasUppercase = /[A-Z]/.test(password);
+            const hasNumber = /[0-9]/.test(password);
+            const validationText = document.getElementById('password-validation');
+            
+            if (!hasUppercase || !hasNumber) {
+                input.setCustomValidity('Password must contain at least one uppercase letter and one number');
+                validationText.classList.add('invalid');
+                validationText.classList.remove('valid');
+            } else {
+                input.setCustomValidity('');
+                validationText.classList.remove('invalid');
+                validationText.classList.add('valid');
+            }
+        }
+
+        // Add event listeners for real-time validation
+        document.addEventListener('DOMContentLoaded', function() {
+            const nameInputs = document.querySelectorAll('input[name="firstname"], input[name="lastname"], input[name="middlename"]');
+            nameInputs.forEach(input => {
+                input.addEventListener('input', () => validateNameInput(input));
+            });
+
+            const phoneInput = document.querySelector('input[name="contact_no"]');
+            if (phoneInput) {
+                phoneInput.addEventListener('input', () => validatePhoneNumber(phoneInput));
+            }
+
+            const birthdateInput = document.querySelector('input[name="birthdate"]');
+            if (birthdateInput) {
+                birthdateInput.addEventListener('change', () => validateBirthdate(birthdateInput));
+            }
+
+            // Only add password validation to registration password field
+            const passwordInput = document.getElementById('reg-password');
+            if (passwordInput) {
+                passwordInput.addEventListener('input', () => validatePassword(passwordInput));
+            }
+        });
+
+        // Add dynamic municipality and barangay handling
+        document.addEventListener('DOMContentLoaded', function() {
+            const municipalitySelect = document.getElementById('municipality');
+            const barangaySelect = document.getElementById('barangay');
+
+            if (municipalitySelect && barangaySelect) {
+                municipalitySelect.addEventListener('change', function() {
+                    const selectedMunicipality = this.value;
+                    
+                    // Reset barangay dropdown
+                    barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+                    barangaySelect.disabled = true;
+
+                    if (selectedMunicipality) {
+                        // Show loading state
+                        barangaySelect.disabled = true;
+                        barangaySelect.innerHTML = '<option value="">Loading...</option>';
+
+                        // Fetch barangays for selected municipality
+                        const formData = new FormData();
+                        formData.append('action', 'get_barangays');
+                        formData.append('municipality', selectedMunicipality);
+
+                        fetch('login.php', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error('Network response was not ok');
+                            }
+                            return response.text().then(text => {
+                                try {
+                                    return JSON.parse(text);
+                                } catch (e) {
+                                    console.error('Server response:', text);
+                                    throw new Error('Invalid JSON response from server');
+                                }
+                            });
+                        })
+                        .then(data => {
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+                            
+                            // Populate barangay dropdown
+                            barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+                            data.forEach(barangay => {
+                                const option = document.createElement('option');
+                                option.value = barangay;
+                                option.textContent = barangay;
+                                barangaySelect.appendChild(option);
+                            });
+                            barangaySelect.disabled = false;
+                        })
+                        .catch(error => {
+                            console.error('Error fetching barangays:', error);
+                            barangaySelect.innerHTML = '<option value="">Error: ' + error.message + '</option>';
+                            barangaySelect.disabled = true;
+                        });
+                    }
+                });
+            }
+        });
+
+        // Terms and Privacy Checkbox Logic
+        document.addEventListener('DOMContentLoaded', function() {
+            var agreeTerms = document.getElementById('agree_terms');
+            var agreePrivacy = document.getElementById('agree_privacy');
+            var registerBtn = document.getElementById('registerBtn');
+            function updateRegisterBtn() {
+                if (agreeTerms.checked && agreePrivacy.checked) {
+                    registerBtn.disabled = false;
+                    registerBtn.style.backgroundColor = '';
+                    registerBtn.style.cursor = '';
+                } else {
+                    registerBtn.disabled = true;
+                    registerBtn.style.backgroundColor = '#bdbdbd';
+                    registerBtn.style.cursor = 'not-allowed';
+                }
+            }
+            if (agreeTerms && agreePrivacy && registerBtn) {
+                agreeTerms.addEventListener('change', updateRegisterBtn);
+                agreePrivacy.addEventListener('change', updateRegisterBtn);
+                updateRegisterBtn();
+            }
+            // Terms Modal
+            var termsLink = document.getElementById('termsLink');
+            var termsModal = document.getElementById('termsModal');
+            if (termsLink && termsModal) {
+                termsLink.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    termsModal.style.display = 'flex';
+                });
+            }
+        });
+        function closeTermsModal() {
+            var termsModal = document.getElementById('termsModal');
+            if (termsModal) termsModal.style.display = 'none';
+        }
     </script>
 </body>
 </html>

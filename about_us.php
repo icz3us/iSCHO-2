@@ -9,10 +9,11 @@
     <title>About Us</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="./images/logo1.png">
     <style>
         :root {
-            --primary-color: #007bff; /* Match navbar hover color */
-            --text-color: #333; /* Match navbar text color */
+            --primary-color: #007bff; 
+            --text-color: #333; 
             --text-muted: #6b7280;
             --background-color: #f9fafb;
             --card-bg: #ffffff;

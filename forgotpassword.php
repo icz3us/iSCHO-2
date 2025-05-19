@@ -33,10 +33,8 @@ function sendPasswordResetEmail($email, $token) {
         $mail->setFrom('ischobsit@gmail.com', 'ISCHO App');
         $mail->addAddress($email);
 
-        // Generate reset link
-        $reset_link = "http://localhost/iSCHO/resetpassword.php?token=$token"; // Updated to point to resetpassword.php
+        $reset_link = " https://0789-180-190-74-82.ngrok-free.app/iSCHO2/resetpassword.php?token=" . urlencode($token); // Updated URL
 
-        // Content
         $mail->isHTML(true);
         $mail->Subject = "Password Reset Request for iSCHO";
         $mail->Body = "
@@ -80,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $forgot_error = "Please enter a valid email address.";
     } else {
-        // Check if email exists in the database
+        // Check if email exists in the users table
         $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
         $stmt->execute([$email]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -88,6 +86,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (!$user) {
             $forgot_error = "No account found with that email address.";
         } else {
+            $user_id = $user['id'];
+
+            // Delete existing tokens for this user to prevent multiple active tokens
+            $stmt = $pdo->prepare("DELETE FROM password_reset_tokens WHERE user_id = ?");
+            $stmt->execute([$user_id]);
+
             // Generate a reset token
             $token = generateToken();
             $expires_at = date('Y-m-d H:i:s', strtotime('+30 minutes'));
@@ -98,8 +102,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     INSERT INTO password_reset_tokens (user_id, token, expires_at)
                     VALUES (?, ?, ?)
                 ");
-                $stmt->execute([$user['id'], $token, $expires_at]);
+                $stmt->execute([$user_id, $token, $expires_at]);
+            } catch (PDOException $e) {
+                $forgot_error = "Failed to generate reset token: " . $e->getMessage();
+            }
 
+            if (empty($forgot_error)) {
                 // Send the reset email
                 $email_result = sendPasswordResetEmail($email, $token);
                 if ($email_result !== true) {
@@ -107,9 +115,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 } else {
                     $forgot_success = "A password reset link has been sent to your email address.";
                 }
-            } catch (PDOException $e) {
-                $forgot_error = "Failed to generate reset token: " . $e->getMessage();
-                error_log("Reset Token Insert Error: " . $e->getMessage());
             }
         }
     }

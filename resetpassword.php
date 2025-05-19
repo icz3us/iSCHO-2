@@ -1,26 +1,26 @@
 <?php
 require './route_guard.php';
 
-// Start the session if not already started
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Handle token validation and password reset
+
 $token = isset($_GET['token']) ? trim($_GET['token']) : '';
 $reset_error = '';
 $reset_success = '';
 $show_form = false;
+$user_id = null;
 
 if (empty($token)) {
     $reset_error = "Invalid or missing reset token.";
 } else {
-    // Validate the token
+    
     $stmt = $pdo->prepare("
-        SELECT prt.user_id, prt.expires_at, prt.used, u.email 
-        FROM password_reset_tokens prt 
-        JOIN users u ON prt.user_id = u.id 
-        WHERE prt.token = ? AND prt.used = 0
+        SELECT user_id, expires_at, used 
+        FROM password_reset_tokens 
+        WHERE token = ? AND used = 0
     ");
     $stmt->execute([$token]);
     $token_data = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -30,46 +30,58 @@ if (empty($token)) {
     } elseif (strtotime($token_data['expires_at']) < time()) {
         $reset_error = "This reset token has expired.";
     } else {
-        $show_form = true; // Token is valid, show the password reset form
+        $user_id = $token_data['user_id'];
+
+        
+        $stmt = $pdo->prepare("SELECT id, role FROM users WHERE id = ?");
+        $stmt->execute([$user_id]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user) {
+            $reset_error = "User not found.";
+        } else {
+            $show_form = true; 
+        }
     }
 }
 
-// Handle password reset form submission
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
     $new_password = trim($_POST['new_password']);
     $confirm_password = trim($_POST['confirm_password']);
 
-    // Validate password
+    
     if (empty($new_password) || empty($confirm_password)) {
         $reset_error = "Please fill in both password fields.";
     } elseif ($new_password !== $confirm_password) {
         $reset_error = "Passwords do not match.";
     } elseif (!preg_match('/[A-Z]/', $new_password) || !preg_match('/[0-9]/', $new_password)) {
         $reset_error = "Password must contain at least one uppercase letter and one number.";
+    } elseif (strlen($new_password) < 8) {
+        $reset_error = "Password must be at least 8 characters long.";
     } else {
         try {
             $pdo->beginTransaction();
 
-            // Update the user's password
+            
             $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
-            $stmt->execute([$hashed_password, $token_data['user_id']]);
+            $stmt->execute([$hashed_password, $user_id]);
 
-            // Mark the token as used
+            
             $stmt = $pdo->prepare("UPDATE password_reset_tokens SET used = 1 WHERE token = ?");
             $stmt->execute([$token]);
 
             $pdo->commit();
 
             $reset_success = "Password reset successfully. Please log in with your new password.";
-            $show_form = false; // Hide the form after successful reset
+            $show_form = false; 
 
-            // Redirect to login page after a short delay
+            
             header('Refresh: 3; url=login.php');
         } catch (PDOException $e) {
             $pdo->rollBack();
             $reset_error = "Failed to reset password: " . $e->getMessage();
-            error_log("Password Reset Error: " . $e->getMessage());
         }
     }
 }
@@ -177,17 +189,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
             position: relative;
         }
 
-        .input-group i {
+        .input-group i.fas.fa-lock {
             position: absolute;
             top: 50%;
             left: 1rem;
             transform: translateY(-50%);
             color: var(--text-muted);
+            z-index: 2;
         }
 
         .form-control {
             width: 100%;
-            padding: 0.75rem 1rem 0.75rem 2.5rem;
+            padding: 0.75rem 2.5rem 0.75rem 2.5rem;
             border: 1px solid var(--border-color);
             border-radius: 8px;
             font-size: 1rem;
@@ -199,6 +212,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
             outline: none;
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            padding: 0;
+            z-index: 2;
+            height: 20px;
+            width: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toggle-password:hover {
+            color: var(--primary-color);
         }
 
         .reset-btn {
@@ -309,10 +344,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
                     <label for="new_password">New Password</label>
                     <div class="input-group">
                         <i class="fas fa-lock"></i>
-                        <input type="password" id="new_password" name="new_password" class="form-control" required pattern="(?=.*[A-Z])(?=.*[0-9]).*" title="Password must contain at least one uppercase letter and one number">
+                        <input type="password" id="new_password" name="new_password" class="form-control" required pattern="(?=.*[A-Z])(?=.*[0-9]).{8,}" title="Password must contain at least one uppercase letter, one number, and be at least 8 characters long">
+                        <button type="button" class="toggle-password" onclick="togglePassword('new_password', this)" tabindex="-1"><i class="fas fa-eye"></i></button>
                     </div>
                     <div id="password-requirements" class="password-requirements">
-                        Must contain at least one uppercase letter and one number
+                        Must contain at least one uppercase letter, one number, and be at least 8 characters long
                     </div>
                 </div>
 
@@ -321,6 +357,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
                     <div class="input-group">
                         <i class="fas fa-lock"></i>
                         <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
+                        <button type="button" class="toggle-password" onclick="togglePassword('confirm_password', this)" tabindex="-1"><i class="fas fa-eye"></i></button>
                     </div>
                 </div>
 
@@ -333,9 +370,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
     </div>
 
     <script>
-        // Real-time password validation feedback
         document.addEventListener('DOMContentLoaded', function() {
             const passwordInput = document.getElementById('new_password');
+            const confirmPasswordInput = document.getElementById('confirm_password');
             const requirementsText = document.getElementById('password-requirements');
 
             if (passwordInput && requirementsText) {
@@ -343,15 +380,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
                     const password = passwordInput.value;
                     const hasUppercase = /[A-Z]/.test(password);
                     const hasNumber = /[0-9]/.test(password);
+                    const isLongEnough = password.length >= 8;
 
-                    if (hasUppercase && hasNumber) {
+                    if (hasUppercase && hasNumber && isLongEnough) {
                         requirementsText.classList.remove('invalid');
                     } else {
                         requirementsText.classList.add('invalid');
                     }
                 });
+
+                confirmPasswordInput.addEventListener('input', function() {
+                    if (confirmPasswordInput.value !== passwordInput.value) {
+                        confirmPasswordInput.setCustomValidity("Passwords do not match.");
+                    } else {
+                        confirmPasswordInput.setCustomValidity("");
+                    }
+                });
             }
         });
+
+        function togglePassword(fieldId, btn) {
+            const input = document.getElementById(fieldId);
+            const icon = btn.querySelector('i');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
     </script>
 </body>
 </html>

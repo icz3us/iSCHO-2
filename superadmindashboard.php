@@ -5,15 +5,12 @@ require 'vendor/autoload.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-
 if ($_SESSION['user_role'] !== 'Superadmin') {
     header('Location: login.php');
     exit;
 }
 
-
-define('ENCRYPTION_KEY', 'your_secure_encryption_key_here_32_bytes'); 
-
+define('ENCRYPTION_KEY', ''); 
 
 function encryptSecretKey($data) {
     $key = ENCRYPTION_KEY;
@@ -28,7 +25,6 @@ function encryptSecretKey($data) {
     ];
 }
 
-
 function decryptSecretKey($encrypted, $iv) {
     $key = ENCRYPTION_KEY;
     $encrypted = base64_decode($encrypted);
@@ -40,11 +36,9 @@ function decryptSecretKey($encrypted, $iv) {
     return $decrypted;
 }
 
-
 function generateSecretKey() {
     return bin2hex(random_bytes(32)); 
 }
-
 
 function sendSecretKey($email, $secretKey) {
     $mail = new PHPMailer(true);
@@ -61,9 +55,8 @@ function sendSecretKey($email, $secretKey) {
         $mail->setFrom('ischobsit@gmail.com', 'ISCHO App');
         $mail->addAddress($email);
 
-        // Content
         $mail->isHTML(true);
-        $mail->Subject = "Your Secret Key for Deleting All Applicants";
+        $mail->Subject = "Your Secret Key for Resetting All Applicants";
         $mail->Body = "
     <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px;'>
         <div style='background-color: #4f46e5; padding: 20px; text-align: center; border-top-left-radius: 8px; border-top-right-radius: 8px;'>
@@ -71,7 +64,7 @@ function sendSecretKey($email, $secretKey) {
         </div>
         <div style='padding: 30px; background-color: #ffffff;'>
             <p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>Hello Superadmin,</p>
-            <p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>To proceed with deleting all applicants, please use the following Secret Key:</p>
+            <p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>To proceed with resetting all applicants' data, please use the following Secret Key:</p>
             <div style='text-align: center; margin: 20px 0;'>
                 <span style='display: inline-block; background-color: #f3f4f6; padding: 15px 25px; border-radius: 5px; font-size: 18px; font-weight: bold; color: #4f46e5; letter-spacing: 1px; word-break: break-all;'>$secretKey</span>
             </div>
@@ -84,7 +77,7 @@ function sendSecretKey($email, $secretKey) {
         </div>
     </div>
 ";
-        $mail->AltBody = "Hello Superadmin,\n\nTo proceed with deleting all applicants, please use the following Secret Key:\n\n$secretKey\n\nThis Secret Key is valid for 10 minutes. Please do not share this key with anyone.\n\nIf you did not request this action, please contact us at ischobsit@gmail.com.\n\nBest regards,\niSCHO Admin Team";
+        $mail->AltBody = "Hello Superadmin,\n\nTo proceed with resetting all applicants' data, please use the following Secret Key:\n\n$secretKey\n\nThis Secret Key is valid for 10 minutes. Please do not share this key with anyone.\n\nIf you did not request this action, please contact us at ischobsit@gmail.com.\n\nBest regards,\niSCHO Admin Team";
 
         $mail->send();
         return true;
@@ -93,7 +86,6 @@ function sendSecretKey($email, $secretKey) {
     }
 }
 
-
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['request_secret_key'])) {
     $user_id = $_SESSION['user_id'];
     $stmt = $pdo->prepare("SELECT email FROM users WHERE id = ? AND role = 'Superadmin'");
@@ -101,12 +93,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['request_secret_key']))
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     $email = $user['email'] ?? 'ischobsit@gmail.com'; 
 
-
     $secretKey = generateSecretKey();
     $expires_at = date('Y-m-d H:i:s', strtotime('+10 minutes'));
 
     try {
-
         $encryptedData = encryptSecretKey($secretKey);
         $encryptedKey = $encryptedData['encrypted'];
         $iv = $encryptedData['iv'];
@@ -167,28 +157,68 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_secret_key'])) 
                         $stmt = $pdo->prepare("DELETE FROM user_residency WHERE user_id IN ($in_params)");
                         $stmt->execute($applicant_ids);
 
-                        $stmt = $pdo->prepare("DELETE FROM users_info WHERE user_id IN ($in_params)");
+                        $stmt = $pdo->prepare("UPDATE users_info SET application_status = NULL, claim_status = NULL WHERE user_id IN ($in_params)");
                         $stmt->execute($applicant_ids);
 
                         $stmt = $pdo->prepare("DELETE FROM notices WHERE user_id IN ($in_params)");
                         $stmt->execute($applicant_ids);
-
-                        $stmt = $pdo->prepare("DELETE FROM tokens WHERE user_id IN ($in_params)");
-                        $stmt->execute($applicant_ids);
-
-                        $stmt = $pdo->prepare("DELETE FROM users WHERE role = 'Applicant'");
-                        $stmt->execute();
                     }
 
                     $stmt = $pdo->prepare("UPDATE secret_keys SET used = 1 WHERE secret_key = ?");
                     $stmt->execute([$key_data['secret_key']]);
 
                     $pdo->commit();
-                    $_SESSION['applicants_delete_success'] = "All applicant data deleted successfully!";
+                    $_SESSION['applicants_reset_success'] = "All applicant data reset successfully!";
                     $_SESSION['show_secret_key_popup'] = false;
+
+                    // Send notice and email to all applicants
+                    $stmt = $pdo->prepare("SELECT id, firstname, lastname, email FROM users WHERE role = 'Applicant'");
+                    $stmt->execute();
+                    $applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    $notice_message = "The application period has been reset. You may now apply again for the scholarship. Please log in to your account to start your new application.";
+                    $email_subject = "Scholarship Application is Now Open Again!";
+                    $email_errors = [];
+                    if (!is_dir('logs')) {
+                        mkdir('logs', 0777, true);
+                    }
+                    foreach ($applicants as $applicant) {
+                        // Insert notice
+                        try {
+                            $stmtNotice = $pdo->prepare("INSERT INTO notices (user_id, message) VALUES (?, ?)");
+                            $stmtNotice->execute([$applicant['id'], $notice_message]);
+                        } catch (Exception $e) {
+                            $errorMsg = date('Y-m-d H:i:s') . " - Notice error for user_id {$applicant['id']}: " . $e->getMessage() . "\n";
+                            error_log($errorMsg, 3, 'logs/email_errors.log');
+                            $email_errors[] = $errorMsg;
+                        }
+                        // Send email
+                        $mail = new PHPMailer(true);
+                        try {
+                            $mail->isSMTP();
+                            $mail->Host = 'smtp.gmail.com';
+                            $mail->SMTPAuth = true;
+                            $mail->Username = 'ischobsit@gmail.com';
+                            $mail->Password = 'wcep jxly qzwn ybud';
+                            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                            $mail->Port = 587;
+
+                            $mail->setFrom('ischobsit@gmail.com', 'iSCHO Admin Team');
+                            $mail->addAddress($applicant['email'], $applicant['firstname'] . ' ' . $applicant['lastname']);
+
+                            $mail->isHTML(true);
+                            $mail->Subject = $email_subject;
+                            $mail->Body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px;'><div style='background-color: #4f46e5; padding: 20px; text-align: center; border-top-left-radius: 8px; border-top-right-radius: 8px;'><h1 style='color: #ffffff; margin: 0; font-size: 24px;'>Scholarship Application Reset</h1></div><div style='padding: 30px; background-color: #ffffff;'><p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>Dear " . htmlspecialchars($applicant['firstname'] . ' ' . $applicant['lastname']) . ",</p><p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>The application period has been <span style='color: #4f46e5; font-weight: bold;'>reset</span>. You may now apply again for the scholarship.</p><p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>Please log in to your account to start your new application.</p><div style='text-align: center; margin: 30px 0;'><a href=' https://0789-180-190-74-82.ngrok-free.app/iSCHO2/login.php' style='display: inline-block; background-color: #4f46e5; color: #fff; padding: 12px 32px; border-radius: 6px; font-size: 16px; text-decoration: none; font-weight: 600;'>Login to iSCHO</a></div><p style='color: #6b7280; font-size: 14px; margin-bottom: 0;'>If you have any questions, please contact us at <a href='mailto:ischobsit@gmail.com' style='color: #4f46e5; text-decoration: none;'>ischobsit@gmail.com</a>.</p></div><div style='background-color: #f9fafb; padding: 15px; text-align: center; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;'><p style='color: #6b7280; font-size: 12px; margin: 0;'>© 2025 iSCHO. All rights reserved.</p></div></div>";
+                            $mail->AltBody = "Dear " . $applicant['firstname'] . ' ' . $applicant['lastname'] . ",\n\nThe application period has been reset. You may now apply again for the scholarship. Please log in to your account to start your new application.\n\nBest regards,\niSCHO Admin Team";
+                            $mail->send();
+                        } catch (Exception $e) {
+                            $errorMsg = date('Y-m-d H:i:s') . " - Email error for user_id {$applicant['id']} ({$applicant['email']}): " . $e->getMessage() . "\n";
+                            error_log($errorMsg, 3, 'logs/email_errors.log');
+                            $email_errors[] = $errorMsg;
+                        }
+                    }
                 } catch (PDOException $e) {
                     $pdo->rollBack();
-                    $_SESSION['secret_key_error'] = "Failed to delete applicants: " . $e->getMessage();
+                    $_SESSION['secret_key_error'] = "Failed to reset applicants: " . $e->getMessage();
                     $_SESSION['show_secret_key_popup'] = true;
                 }
             } else {
@@ -207,17 +237,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_secret_key'])) 
     exit;
 }
 
-
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-    $stmt = $pdo->prepare("DELETE FROM tokens WHERE user_id = ? AND token = ?");
-    $stmt->execute([$_SESSION['user_id'], $_SESSION['token']]);
-    
+    session_start();
     $_SESSION = array();
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
+    }
     session_destroy();
-    header('Location: login.php');
+    header('Location: login.php?message=Logged out successfully.');
     exit;
 }
-
 
 $lastname = isset($_SESSION['lastname']) ? $_SESSION['lastname'] : '';
 $firstname = isset($_SESSION['firstname']) ? $_SESSION['firstname'] : '';
@@ -227,7 +260,6 @@ $full_name = trim("$lastname, $firstname $middlename");
 if (empty($full_name) || $full_name === ',') {
     $full_name = 'Super Admin';
 }
-
 
 $total_applicants = 0;
 $approved_applicants = 0;
@@ -249,7 +281,6 @@ try {
     $_SESSION['analytics_error'] = "Error fetching analytics: " . $e->getMessage();
 }
 
-
 $current_application_deadline = null;
 try {
     $stmt = $pdo->prepare("SELECT application_deadline FROM application_period ORDER BY updated_at DESC LIMIT 1");
@@ -263,22 +294,19 @@ try {
 }
 $formatted_deadline = $current_application_deadline ? date('m/d/Y', strtotime($current_application_deadline)) : 'Not Set';
 
-
 $admins = [];
 try {
-    $stmt = $pdo->prepare("SELECT id, firstname, lastname, middlename, contact_no, email, username FROM users WHERE role = 'Admin'");
+    $stmt = $pdo->prepare("SELECT id, firstname, lastname, middlename, contact_no, email FROM users WHERE role = 'Admin'");
     $stmt->execute();
     $admins = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $_SESSION['admin_list_error'] = "Error fetching admins: " . $e->getMessage();
 }
 
-
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_application_period'])) {
     $application_deadline = trim($_POST['application_deadline']);
     $update_error = '';
 
-    
     if (empty($application_deadline)) {
         $update_error = "Application deadline is required.";
     } else {
@@ -290,13 +318,43 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_application_per
 
     if (empty($update_error)) {
         try {
+            $pdo->beginTransaction();
+
             $stmt = $pdo->prepare("
                 INSERT INTO application_period (application_deadline, updated_at)
                 VALUES (?, NOW())
             ");
             $stmt->execute([$application_deadline]);
+
+            // Get all applicants
+            $stmt = $pdo->prepare("SELECT id, firstname, lastname, email FROM users WHERE role = 'Applicant'");
+            $stmt->execute();
+            $applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $formatted_deadline = date('m/d/Y', strtotime($application_deadline));
+            $notice_message = "The application deadline has been updated to " . $formatted_deadline . ". Please ensure to submit your application before this date.";
+            $email_errors = [];
+
+            if (!is_dir('logs')) {
+                mkdir('logs', 0777, true);
+            }
+
+            foreach ($applicants as $applicant) {
+                // Insert notice
+                try {
+                    $stmtNotice = $pdo->prepare("INSERT INTO notices (user_id, message) VALUES (?, ?)");
+                    $stmtNotice->execute([$applicant['id'], $notice_message]);
+                } catch (Exception $e) {
+                    $errorMsg = date('Y-m-d H:i:s') . " - Notice error for user_id {$applicant['id']}: " . $e->getMessage() . "\n";
+                    error_log($errorMsg, 3, 'logs/email_errors.log');
+                    $email_errors[] = $errorMsg;
+                }
+            }
+
+            $pdo->commit();
             $_SESSION['application_period_success'] = "Application period updated successfully!";
         } catch (PDOException $e) {
+            $pdo->rollBack();
             $_SESSION['application_period_error'] = "Failed to update application period: " . $e->getMessage();
         }
     } else {
@@ -306,14 +364,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_application_per
     exit;
 }
 
-
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register_admin'])) {
     $firstname = trim($_POST['firstname']);
     $lastname = trim($_POST['lastname']);
     $middlename = trim($_POST['middlename']);
     $contact_no = trim($_POST['contact_no']);
     $email = trim($_POST['email']);
-    $username = trim($_POST['username']);
     $password = trim($_POST['password']);
     $confirm_password = trim($_POST['confirm_password']);
 
@@ -329,12 +385,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register_admin'])) {
         $register_error = "Email is already registered.";
     }
 
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
-    $stmt->execute([$username]);
-    if ($stmt->fetch()) {
-        $register_error = "Username is already taken.";
-    }
-
     if (empty($register_error)) {
         try {
             $pdo->beginTransaction();
@@ -342,11 +392,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register_admin'])) {
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("
                 INSERT INTO users (
-                    firstname, lastname, middlename, contact_no, email, username, password, role
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Admin')
+                    firstname, lastname, middlename, contact_no, email, password, role
+                ) VALUES (?, ?, ?, ?, ?, ?, 'Admin')
             ");
             $stmt->execute([
-                $firstname, $lastname, $middlename, $contact_no, $email, $username, $hashed_password
+                $firstname, $lastname, $middlename, $contact_no, $email, $hashed_password
             ]);
 
             $pdo->commit();
@@ -364,7 +414,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register_admin'])) {
     exit;
 }
 
-
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_admin'])) {
     $admin_id = trim($_POST['admin_id']);
     $firstname = trim($_POST['firstname']);
@@ -372,7 +421,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_admin'])) {
     $middlename = trim($_POST['middlename']);
     $contact_no = trim($_POST['contact_no']);
     $email = trim($_POST['email']);
-    $username = trim($_POST['username']);
 
     $update_error = '';
 
@@ -382,20 +430,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_admin'])) {
         $update_error = "Email is already registered.";
     }
 
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ? AND id != ?");
-    $stmt->execute([$username, $admin_id]);
-    if ($stmt->fetch()) {
-        $update_error = "Username is already taken.";
-    }
-
     if (empty($update_error)) {
         try {
             $stmt = $pdo->prepare("
                 UPDATE users 
-                SET firstname = ?, lastname = ?, middlename = ?, contact_no = ?, email = ?, username = ? 
+                SET firstname = ?, lastname = ?, middlename = ?, contact_no = ?, email = ? 
                 WHERE id = ? AND role = 'Admin'
             ");
-            $stmt->execute([$firstname, $lastname, $middlename, $contact_no, $email, $username, $admin_id]);
+            $stmt->execute([$firstname, $lastname, $middlename, $contact_no, $email, $admin_id]);
             $_SESSION['admin_update_success'] = "Admin updated successfully!";
         } catch (PDOException $e) {
             $update_error = "Update failed: " . $e->getMessage();
@@ -408,7 +450,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_admin'])) {
     header('Location: superadmindashboard.php');
     exit;
 }
-
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
     $admin_id = trim($_POST['admin_id']);
@@ -477,24 +518,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             display: flex;
             flex-direction: column;
             align-items: center;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .sidebar .logo {
-            margin-bottom: 2rem;
+            margin-bottom: 2.5rem;
             text-align: center;
             width: 100%;
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .sidebar .logo span {
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             color: white;
+            font-weight: 600;
+            letter-spacing: 0.5px;
         }
 
         .profile-pic {
             width: 100px;
             height: 100px;
             border-radius: 50%;
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -502,17 +549,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             font-weight: 500;
             color: var(--text-color);
             background-color: #e5e7eb;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .profile-pic:hover {
+            transform: scale(1.05);
         }
 
         .user-name {
-            margin-bottom: 2rem;
+            margin-bottom: 2.5rem;
             text-align: center;
             width: 100%;
+            padding: 0 1rem;
         }
 
         .user-name div {
-            font-size: 1rem;
-            font-weight: 400;
+            font-size: 1.1rem;
+            font-weight: 500;
             color: white;
             margin-bottom: 0.25rem;
             overflow: hidden;
@@ -523,31 +578,48 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
         .sidebar ul {
             list-style: none;
             width: 100%;
+            padding: 0 0.5rem;
         }
 
         .sidebar ul li {
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
         }
 
         .sidebar ul li a {
-            color: white;
+            color: rgba(255, 255, 255, 0.8);
             text-decoration: none;
             display: flex;
             align-items: center;
-            padding: 0.75rem 1rem;
-            border-radius: 6px;
-            transition: background-color 0.3s ease;
+            padding: 0.875rem 1.25rem;
+            border-radius: 12px;
+            transition: all 0.3s ease;
             font-size: 1rem;
             cursor: pointer;
+            border: 1px solid transparent;
         }
 
         .sidebar ul li a i {
-            margin-right: 0.75rem;
+            margin-right: 1rem;
+            font-size: 1.2rem;
+            width: 24px;
+            text-align: center;
+            transition: transform 0.3s ease;
         }
 
-        .sidebar ul li a:hover,
+        .sidebar ul li a:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar ul li a:hover i {
+            transform: translateX(3px);
+        }
+
         .sidebar ul li a.active {
             background-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
         }
 
         .main-content {
@@ -614,6 +686,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             border-radius: 12px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
             text-align: center;
+            border: 1px solid #e5e7eb;
         }
 
         .stat-card h3 {
@@ -633,6 +706,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             border-radius: 12px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
             margin-bottom: 2rem;
+            border: 1px solid #e5e7eb;
         }
 
         .section h2 {
@@ -710,13 +784,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
         }
 
         .form-control {
-            width: 100%;
-            padding: 0.75rem 1rem 0.75rem 2.5rem;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: all: 0.3s ease;
-            background-color: rgba(255, 255, 255, 0.8);
+        width: 100%;
+        padding: 0.75rem 1rem 0.75rem 2.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+        background-color: rgba(255, 255, 255, 0.8);
         }
 
         .form-control:focus {
@@ -733,7 +807,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
 
         .form-buttons .submit-btn,
         .form-buttons .delete-btn,
-        .form-buttons .delete-all-btn {
+        .form-buttons .reset-all-btn {
             padding: 0.75rem 1.5rem;
             border: none;
             border-radius: 8px;
@@ -761,12 +835,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             background-color: #5a6268;
         }
 
-        .form-buttons .delete-all-btn {
+        .form-buttons .reset-all-btn {
             background-color: var(--error-color);
             color: white;
         }
 
-        .form-buttons .delete-all-btn:hover {
+        .form-buttons .reset-all-btn:hover {
             background-color: #dc2626;
         }
 
@@ -844,7 +918,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             display: none;
         }
 
-        /* Secret Key Popup Styles */
         .secret-key-popup {
             display: none;
             position: fixed;
@@ -934,6 +1007,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             .profile-pic {
                 width: 80px;
                 height: 80px;
+                font-size: 1.5rem;
             }
 
             .form-row {
@@ -953,8 +1027,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
         @media (max-width: 576px) {
             .sidebar {
                 width: 60px;
-                padding: 1rem;
+                padding: 1rem 0.5rem;
                 align-items: center;
+                overflow-x: hidden;
+            }
+
+            .sidebar .logo {
+                margin-bottom: 1.5rem;
+                padding: 0.5rem;
             }
 
             .sidebar .logo span,
@@ -963,15 +1043,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                 display: none;
             }
 
+            .sidebar ul {
+                width: 100%;
+                padding: 0;
+            }
+
+            .sidebar ul li {
+                margin-bottom: 0.5rem;
+                width: 100%;
+            }
+
             .sidebar ul li a {
                 justify-content: center;
-                padding: 0.5rem;
+                padding: 0.75rem 0.5rem;
+                width: 100%;
+                border-radius: 8px;
+            }
+
+            .sidebar ul li a i {
+                margin-right: 0;
+                font-size: 1.2rem;
             }
 
             .profile-pic {
                 width: 40px;
                 height: 40px;
                 font-size: 1.2rem;
+                margin-bottom: 1rem;
             }
 
             .main-content {
@@ -995,7 +1093,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
 
             .form-buttons .submit-btn,
             .form-buttons .delete-btn,
-            .form-buttons .delete-all-btn,
+            .form-buttons .reset-all-btn,
             .form-buttons .verify-btn {
                 width: 100%;
             }
@@ -1008,6 +1106,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                 font-size: 1.3rem;
             }
         }
+
+        .input-group.password-group {
+            position: relative;
+        }
+        .input-group.password-group .form-control {
+            padding-right: 2.5rem;
+        }
+        .password-toggle {
+            position: absolute;
+            right: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0;
+            z-index: 2;
+            height: 1.5rem;
+            width: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .password-toggle:hover {
+            color: var(--text-color);
+        }
     </style>
 </head>
 <body>
@@ -1016,9 +1141,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             <div class="logo">
                 <span>Super Admin Portal</span>
             </div>
-            <div class="profile-pic">
-                <!-- Profile pic content -->
-            </div>
+            <div class="profile-pic" style="background-image: url('./images/pfp.avif'); background-size: cover; background-position: center;"></div>
             <div class="user-name">
                 <div><?php echo htmlspecialchars($full_name); ?></div>
             </div>
@@ -1092,14 +1215,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                     <?php echo $_SESSION['application_period_error']; unset($_SESSION['application_period_error']); ?>
                 </div>
             <?php endif; ?>
-            <?php if (isset($_SESSION['applicants_delete_success'])): ?>
+            <?php if (isset($_SESSION['applicants_reset_success'])): ?>
                 <div class="success-message">
-                    <?php echo $_SESSION['applicants_delete_success']; unset($_SESSION['applicants_delete_success']); ?>
-                </div>
-            <?php endif; ?>
-            <?php if (isset($_SESSION['applicants_delete_error'])): ?>
-                <div class="error-message">
-                    <?php echo $_SESSION['applicants_delete_error']; unset($_SESSION['applicants_delete_error']); ?>
+                    <?php echo $_SESSION['applicants_reset_success']; unset($_SESSION['applicants_reset_success']); ?>
                 </div>
             <?php endif; ?>
             <?php if (isset($_SESSION['secret_key_error'])): ?>
@@ -1123,7 +1241,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                         <h3><?php echo $denied_applicants; ?></h3>
                         <p>Denied Applicants</p>
                     </div>
-                    <div class="stat-card">
+                </div>
+                <div class="stat-card" style="max-width: 100%; text-align: left; padding: 1.5rem; border: 1px solid #e5e7eb; border-radius: 8px; background-color: #f9fafb; margin-bottom: 2rem;">
                         <h3><?php echo htmlspecialchars($formatted_deadline); ?></h3>
                         <p>Application Deadline</p>
                         <form method="POST" style="margin-top: 1rem;">
@@ -1138,16 +1257,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                                 <button type="submit" name="update_application_period" class="submit-btn">Update Deadline</button>
                             </div>
                         </form>
-                    </div>
                 </div>
-                <!-- Delete All Applicants Button -->
+                <!-- Reset All Applicants Button -->
                 <div class="section">
                     <h2>Manage Applicants</h2>
-                    <p>This function should be used to delete all data once the Application Period has officially ended, </p>
-                    <p>ensuring that the system is cleared and ready for the next cycle.</p>
-                    <form method="POST" onsubmit="return confirm('Are you sure you want to delete all applicant data? A Secret Key will be sent to your email for verification.');">
+                    <p>This function should be used to reset all applicants' data once the Application Period has officially ended, </p>
+                    <p>ensuring that the system is cleared and ready for the next cycle while preserving applicant accounts.</p>
+                    <form method="POST" onsubmit="return confirm('Are you sure you want to reset all applicant data? A Secret Key will be sent to your email for verification.');">
                         <div class="form-buttons">
-                            <button type="submit" name="request_secret_key" class="delete-all-btn">Delete All Applicants</button>
+                            <button type="submit" name="request_secret_key" class="reset-all-btn">Reset All Applicants</button>
                         </div>
                     </form>
                 </div>
@@ -1197,27 +1315,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                                     <input type="email" id="email" name="email" class="form-control" required>
                                 </div>
                             </div>
-                            <div class="form-group">
-                                <label for="username">Username <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-user-circle"></i>
-                                    <input type="text" id="username" name="username" class="form-control" required>
-                                </div>
-                            </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="password">Password <span class="required">*</span></label>
-                                <div class="input-group">
+                                <div class="input-group password-group">
                                     <i class="fas fa-lock"></i>
                                     <input type="password" id="password" name="password" class="form-control" required>
+                                    <button type="button" class="password-toggle" onclick="togglePassword('password')">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
                                 </div>
                             </div>
                             <div class="form-group">
                                 <label for="confirm_password">Confirm Password <span class="required">*</span></label>
-                                <div class="input-group">
+                                <div class="input-group password-group">
                                     <i class="fas fa-lock"></i>
                                     <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
+                                    <button type="button" class="password-toggle" onclick="togglePassword('confirm_password')">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1230,6 +1347,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
 
             <!-- Manage Admins Section -->
             <div class="manage-admins" id="manageAdmins">
+                <div class="section">
                 <h2>Manage Admins</h2>
                 <div class="table-container">
                     <table>
@@ -1240,14 +1358,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                                 <th>Middlename</th>
                                 <th>Contact Number</th>
                                 <th>Email</th>
-                                <th>Username</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($admins)): ?>
                                 <tr>
-                                    <td colspan="7" style="text-align: center;">No Admins found.</td>
+                                    <td colspan="6" style="text-align: center;">No Admins found.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($admins as $admin): ?>
@@ -1257,10 +1374,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                                         <td><?php echo htmlspecialchars($admin['middlename'] ?: '-'); ?></td>
                                         <td><?php echo htmlspecialchars($admin['contact_no']); ?></td>
                                         <td><?php echo htmlspecialchars($admin['email']); ?></td>
-                                        <td><?php echo htmlspecialchars($admin['username']); ?></td>
                                         <td>
                                             <div class="action-buttons">
-                                                <button class="edit-btn" onclick="showEditForm('<?php echo $admin['id']; ?>')">Edit</button>
+                                                <button class="edit-btn" onclick="showEditForm('<?php echo $admin['id']; ?>', '<?php echo htmlspecialchars(addslashes($admin['firstname'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['lastname'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['middlename'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['contact_no'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['email'])); ?>')">Edit</button>
                                                 <form method="POST" onsubmit="return confirm('Are you sure you want to delete this Admin?');">
                                                     <input type="hidden" name="admin_id" value="<?php echo $admin['id']; ?>">
                                                     <button type="submit" name="delete_admin" class="delete-btn-table">Delete</button>
@@ -1273,69 +1389,53 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                         </tbody>
                     </table>
                 </div>
-
-                <!-- Edit Admin Forms (hidden by default) -->
-                <?php foreach ($admins as $admin): ?>
-                    <div class="admin-form" id="editAdminForm-<?php echo $admin['id']; ?>" style="display: none;">
-                        <h2>Edit Admin: <?php echo htmlspecialchars($admin['username']); ?></h2>
-                        <form method="POST">
-                            <input type="hidden" name="admin_id" value="<?php echo $admin['id']; ?>">
-                            <div class="form-section">
-                                <h3>Admin Information</h3>
+                <!-- Edit Admin Form (below the table, hidden by default) -->
+                <form id="editAdminForm" class="admin-form" method="POST" style="display:none; margin-top: 1rem;">
+                    <input type="hidden" name="admin_id" id="edit-admin-id">
                                 <div class="form-row">
                                     <div class="form-group">
-                                        <label for="firstname-<?php echo $admin['id']; ?>">Firstname <span class="required">*</span></label>
+                            <label for="edit-firstname">Firstname <span class="required">*</span></label>
                                         <div class="input-group">
                                             <i class="fas fa-user"></i>
-                                            <input type="text" id="firstname-<?php echo $admin['id']; ?>" name="firstname" class="form-control" value="<?php echo htmlspecialchars($admin['firstname']); ?>" required>
+                                <input type="text" id="edit-firstname" name="firstname" class="form-control" required>
                                         </div>
                                     </div>
                                     <div class="form-group">
-                                        <label for="lastname-<?php echo $admin['id']; ?>">Lastname <span class="required">*</span></label>
+                            <label for="edit-lastname">Lastname <span class="required">*</span></label>
                                         <div class="input-group">
                                             <i class="fas fa-user"></i>
-                                            <input type="text" id="lastname-<?php echo $admin['id']; ?>" name="lastname" class="form-control" value="<?php echo htmlspecialchars($admin['lastname']); ?>" required>
+                                <input type="text" id="edit-lastname" name="lastname" class="form-control" required>
                                         </div>
                                     </div>
                                     <div class="form-group">
-                                        <label for="middlename-<?php echo $admin['id']; ?>">Middlename</label>
+                            <label for="edit-middlename">Middlename</label>
                                         <div class="input-group">
                                             <i class="fas fa-user"></i>
-                                            <input type="text" id="middlename-<?php echo $admin['id']; ?>" name="middlename" class="form-control" value="<?php echo htmlspecialchars($admin['middlename']); ?>">
+                                <input type="text" id="edit-middlename" name="middlename" class="form-control">
                                         </div>
                                     </div>
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group">
-                                        <label for="contact_no-<?php echo $admin['id']; ?>">Contact Number <span class="required">*</span></label>
+                            <label for="edit-contact_no">Contact Number <span class="required">*</span></label>
                                         <div class="input-group">
                                             <i class="fas fa-phone"></i>
-                                            <input type="tel" id="contact_no-<?php echo $admin['id']; ?>" name="contact_no" class="form-control" value="<?php echo htmlspecialchars($admin['contact_no']); ?>" required>
+                                <input type="tel" id="edit-contact_no" name="contact_no" class="form-control" required>
                                         </div>
                                     </div>
                                     <div class="form-group">
-                                        <label for="email-<?php echo $admin['id']; ?>">Email <span class="required">*</span></label>
+                            <label for="edit-email">Email <span class="required">*</span></label>
                                         <div class="input-group">
                                             <i class="fas fa-envelope"></i>
-                                            <input type="email" id="email-<?php echo $admin['id']; ?>" name="email" class="form-control" value="<?php echo htmlspecialchars($admin['email']); ?>" required>
-                                        </div>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="username-<?php echo $admin['id']; ?>">Username <span class="required">*</span></label>
-                                        <div class="input-group">
-                                            <i class="fas fa-user-circle"></i>
-                                            <input type="text" id="username-<?php echo $admin['id']; ?>" name="username" class="form-control" value="<?php echo htmlspecialchars($admin['username']); ?>" required>
-                                        </div>
+                                <input type="email" id="edit-email" name="email" class="form-control" required>
                                     </div>
                                 </div>
                             </div>
                             <div class="form-buttons">
                                 <button type="submit" name="update_admin" class="submit-btn">Update Admin</button>
-                                <button type="button" class="delete-btn" onclick="showManageAdmins()">Cancel</button>
+                        <button type="button" class="delete-btn" onclick="hideAllEditForms()">Cancel</button>
                             </div>
                         </form>
-                    </div>
-                <?php endforeach; ?>
             </div>
         </div>
     </div>
@@ -1397,15 +1497,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             hideAllEditForms();
         }
 
-        function showEditForm(adminId) {
+        function showEditForm(adminId, firstname, lastname, middlename, contact_no, email) {
             hideAllEditForms();
-            document.getElementById('editAdminForm-' + adminId).style.display = 'block';
+            document.getElementById('editAdminForm').style.display = 'block';
+            document.getElementById('edit-admin-id').value = adminId;
+            document.getElementById('edit-firstname').value = firstname;
+            document.getElementById('edit-lastname').value = lastname;
+            document.getElementById('edit-middlename').value = middlename;
+            document.getElementById('edit-contact_no').value = contact_no;
+            document.getElementById('edit-email').value = email;
         }
 
         function hideAllEditForms() {
-            document.querySelectorAll('.admin-form[id^="editAdminForm-"]').forEach(form => {
-                form.style.display = 'none';
-            });
+            document.getElementById('editAdminForm').style.display = 'none';
         }
 
         function hideSecretKeyPopup() {
@@ -1490,6 +1594,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                 }
             }
         });
+
+        // Add password toggle functionality
+        function togglePassword(inputId) {
+            const passwordInput = document.getElementById(inputId);
+            const toggleButton = passwordInput.nextElementSibling;
+            const icon = toggleButton.querySelector('i');
+
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
     </script>
 </body>
 </html>
