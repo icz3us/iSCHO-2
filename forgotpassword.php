@@ -33,7 +33,7 @@ function sendPasswordResetEmail($email, $token) {
         $mail->setFrom('ischobsit@gmail.com', 'ISCHO App');
         $mail->addAddress($email);
 
-        $reset_link = " https://0789-180-190-74-82.ngrok-free.app/iSCHO2/resetpassword.php?token=" . urlencode($token); // Updated URL
+        $reset_link = "  https://32bf-2001-fd8-b812-d700-9d24-2fe6-269-a01b.ngrok-free.app/ischo2/resetpassword.php?token=" . urlencode($token); // Updated URL
 
         $mail->isHTML(true);
         $mail->Subject = "Password Reset Request for iSCHO";
@@ -158,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         body {
-            background: url('./images/gc1.jpg') no-repeat center center fixed;
+            background: url('./images/bg.jpg') no-repeat center center fixed;
             background-size: cover;
             color: var(--text-color);
             min-height: 100vh;

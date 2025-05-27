@@ -209,21 +209,31 @@ if ($firstname && $lastname) {
 $total_applicants = 0;
 $approved_applicants = 0;
 $denied_applicants = 0;
+$under_review_applicants = 0;
 
 try {
+    // Count total applicants
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'Applicant'");
     $stmt->execute();
     $total_applicants = $stmt->fetchColumn();
 
+    // Count approved applicants
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Approved'");
     $stmt->execute();
     $approved_applicants = $stmt->fetchColumn();
 
+    // Count denied applicants
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Denied'");
     $stmt->execute();
     $denied_applicants = $stmt->fetchColumn();
+
+    // Count under review applicants
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Under Review'");
+    $stmt->execute();
+    $under_review_applicants = $stmt->fetchColumn();
+
 } catch (PDOException $e) {
-    $_SESSION['analytics_error'] = "Error fetching analytics: " . $e->getMessage();
+    error_log("Error: " . $e->getMessage());
 }
 
 $male_count = 0;
@@ -268,7 +278,6 @@ try {
             ui.barangay,
             ui.sex AS gender,
             ui.civil_status,
-            ui.nationality,
             ui.birthdate,
             ui.place_of_birth,
             up.degree,
@@ -415,8 +424,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['approve']) || isset($
 
             // Required fields from users_info
             $required_users_info = [
-                'municipality', 'barangay', 'gender', 'civil_status', 'nationality',
-                'birthdate', 'place_of_birth'
+                'municipality', 'barangay', 'gender', 'civil_status', 'birthdate', 'place_of_birth'
             ];
 
             // Required fields from user_personal
@@ -542,7 +550,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['approve']) || isset($
                         $stmt->execute([$applicant_id, $token]);
 
                         // Generate QR code using phpqrcode
-                        $qrCodeUrl = " https://0789-180-190-74-82.ngrok-free.app/iSCHO2/verify_claim.php?token=" . urlencode($token);
+                        $qrCodeUrl = "  https://32bf-2001-fd8-b812-d700-9d24-2fe6-269-a01b.ngrok-free.app/ischo2/verify_claim.php?token=" . urlencode($token);
                         $qrCodePath = 'qrcodes/' . $token . '.png';
                         if (!is_dir('qrcodes')) {
                             mkdir('qrcodes', 0777, true);
@@ -723,6 +731,51 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_deadline') {
 }
 
 $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
+
+// Fetch municipality statistics
+$municipality_stats = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT ui.municipality, COUNT(*) as total_count,
+            SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
+            SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
+        FROM users_info ui 
+        JOIN users u ON ui.user_id = u.id
+        WHERE ui.municipality IS NOT NULL 
+            AND ui.municipality != ''
+            AND u.role = 'Applicant'
+        GROUP BY ui.municipality 
+        ORDER BY ui.municipality ASC
+    ");
+    $stmt->execute();
+    $municipality_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Error fetching municipality statistics: " . $e->getMessage());
+}
+
+// Fetch current college statistics
+$college_stats = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT 
+            up.current_college,
+            COUNT(*) as total_count,
+            SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
+            SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
+        FROM user_personal up
+        JOIN users u ON up.user_id = u.id
+        JOIN users_info ui ON u.id = ui.user_id
+        WHERE up.current_college IS NOT NULL 
+            AND up.current_college != ''
+            AND u.role = 'Applicant'
+        GROUP BY up.current_college 
+        ORDER BY up.current_college ASC
+    ");
+    $stmt->execute();
+    $college_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Error fetching college statistics: " . $e->getMessage());
+}
 ?>
 
 <!DOCTYPE html>
@@ -740,54 +793,78 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
     
     <style>
     .chart-stats-section {
-      margin: 2rem 0;
-      padding: 2rem 1rem;
-      background: #f9fafb;
-      border-radius: 16px;
-      box-shadow: 0 4px 24px rgba(79, 70, 229, 0.08);
+        margin: 2rem 0;
+        padding: 1.5rem;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        overflow: hidden; /* Add this to prevent overflow issues */
     }
+
     .charts-flex {
-      display: flex;
-      gap: 2rem;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    .chart-card {
-      background: #fff;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(31, 41, 55, 0.08);
-      padding: 1.5rem 2rem;
-      min-width: 320px;
-      max-width: 600px;
-      flex: 1 1 350px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    .chart-card.application-status {
-      flex: 2 1 0;
-      max-width: 800px;
-      height: 430px;
-    }
-    .chart-card.gender-distribution {
-      flex: 1 1 0;
-      max-width: 400px;
-      height: 430px;
-    }
-    .chart-card h3 {
-      margin-bottom: 1rem;
-      color: #4f46e5;
-      font-size: 1.2rem;
-      font-weight: 600;
-    }
-    @media (max-width: 900px) {
-      .charts-flex {
-        flex-direction: column;
+        display: flex;
         gap: 2rem;
-      }
-      .chart-card.application-status, .chart-card.gender-distribution {
-        max-width: 100%;
-      }
+        flex-wrap: wrap;
+    }
+
+    .chart-card {
+        flex: 1;
+        min-width: 300px; /* Reduce minimum width for better mobile display */
+        padding: 1.5rem;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .chart-container {
+        position: relative;
+        width: 100%;
+        height: 300px !important; /* Force consistent height */
+        max-height: 400px;
+    }
+
+    .chart-card h3 {
+        margin-bottom: 1rem;
+        color: #1f2937;
+        font-size: 1.1rem;
+        text-align: center;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 1200px) {
+        .chart-card {
+            min-width: calc(50% - 1rem); /* Two charts per row */
+        }
+    }
+
+    @media (max-width: 768px) {
+        .charts-flex {
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        
+        .chart-card {
+            min-width: 100%;
+            margin: 0;
+        }
+
+        .chart-container {
+            height: 250px !important; /* Slightly smaller height on mobile */
+        }
+
+        .chart-card h3 {
+            font-size: 1rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .chart-stats-section {
+            padding: 1rem;
+        }
+
+        .chart-container {
+            height: 200px !important; /* Even smaller height on very small screens */
+        }
     }
 
     .sidebar {
@@ -1146,6 +1223,201 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         font-size: 1.2rem;
         margin-bottom: 1.5rem;
     }
+
+    /* Add these styles */
+    .stat-card {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+    }
+
+    .stats-modal .modal-content {
+        width: 90%;
+        max-width: 900px;
+        max-height: 80vh;
+        overflow-y: auto;
+        padding: 2rem;
+    }
+
+    .stats-modal .table-container {
+        margin-top: 1rem;
+        overflow-x: auto;
+    }
+
+    .stats-modal table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+    }
+
+    .stats-modal th,
+    .stats-modal td {
+        padding: 1rem;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .stats-modal th {
+        background-color: #f9fafb;
+        font-weight: 600;
+        color: #1f2937;
+    }
+
+    .stats-modal tr:hover {
+        background-color: #f9fafb;
+    }
+
+    .stats-modal .close-btn {
+        position: absolute;
+        right: 1.5rem;
+        top: 1.5rem;
+    }
+
+    /* Add these styles in the <style> section */
+    .success-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .success-modal-content {
+        background-color: #ffffff;
+        padding: 2rem;
+        border-radius: 8px;
+        text-align: center;
+        position: relative;
+        width: 90%;
+        max-width: 400px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .success-icon {
+        color: #22c55e;
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+
+    .success-modal h3 {
+        color: #1f2937;
+        margin-bottom: 0.5rem;
+        font-size: 1.5rem;
+    }
+
+    .success-modal p {
+        color: #6b7280;
+        margin-bottom: 1.5rem;
+    }
+
+    .success-modal .close-btn {
+        position: absolute;
+        right: 1rem;
+        top: 1rem;
+        font-size: 1.5rem;
+        color: #6b7280;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 0;
+    }
+
+    .success-modal .close-btn:hover {
+        color: #1f2937;
+    }
+
+    .success-modal .ok-btn {
+        background-color: #4f46e5;
+        color: white;
+        border: none;
+        padding: 0.75rem 2rem;
+        border-radius: 6px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .success-modal .ok-btn:hover {
+        background-color: #4338ca;
+    }
+
+    .stat-card.under-review .icon {
+        color: #f59e0b;
+    }
+
+    .stat-card.under-review h3 {
+        background: linear-gradient(45deg, #f59e0b, #d97706);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    /* Add these styles */
+    .stat-card {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .deadline-info {
+        margin-bottom: 2rem;
+    }
+
+    .deadline-card {
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .deadline-card i {
+        font-size: 2rem;
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .deadline-details h3 {
+        margin: 0;
+        font-size: 1.2rem;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .deadline-details p {
+        margin: 0.5rem 0 0;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: white;
+    }
+
+    @media (max-width: 768px) {
+        .deadline-card {
+            padding: 1.25rem;
+        }
+
+        .deadline-card i {
+            font-size: 1.5rem;
+        }
+
+        .deadline-details h3 {
+            font-size: 1rem;
+        }
+
+        .deadline-details p {
+            font-size: 1.25rem;
+        }
+    }
     </style>
 </head>
 <body>
@@ -1236,16 +1508,46 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
 
             <!-- Dashboard View -->
             <?php if ($view === 'dashboard'): ?>
+                <!-- Application Deadline Display -->
+                <?php
+                try {
+                    $stmt = $pdo->prepare("SELECT application_deadline FROM application_period ORDER BY updated_at DESC LIMIT 1");
+                    $stmt->execute();
+                    $deadline_result = $stmt->fetch(PDO::FETCH_ASSOC);
+                    $formatted_deadline = $deadline_result ? date('F d, Y', strtotime($deadline_result['application_deadline'])) : 'Not Set';
+                ?>
+                <div class="deadline-info">
+                    <div class="deadline-card">
+                        <i class="fas fa-calendar-alt"></i>
+                        <div class="deadline-details">
+                            <h3>Application Deadline</h3>
+                            <p><?php echo htmlspecialchars($formatted_deadline); ?></p>
+                        </div>
+                    </div>
+                </div>
+                <?php
+                } catch (PDOException $e) {
+                    error_log("Error fetching deadline: " . $e->getMessage());
+                }
+                ?>
                 <div class="stats">
-                    <div class="stat-card">
+                    <div class="stat-card total-applicants" onclick="openStatsModal('total-modal')">
+                        <i class="fas fa-users icon"></i>
                         <h3><?php echo $total_applicants; ?></h3>
                         <p>Total Applicants</p>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card under-review" onclick="openStatsModal('under-review-modal')">
+                        <i class="fas fa-clock icon"></i>
+                        <h3><?php echo $under_review_applicants; ?></h3>
+                        <p>Pending</p>
+                    </div>
+                    <div class="stat-card approved" onclick="openStatsModal('approved-modal')">
+                        <i class="fas fa-check-circle icon"></i>
                         <h3><?php echo $approved_applicants; ?></h3>
                         <p>Approved Applicants</p>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card denied" onclick="openStatsModal('denied-modal')">
+                        <i class="fas fa-times-circle icon"></i>
                         <h3><?php echo $denied_applicants; ?></h3>
                         <p>Denied Applicants</p>
                     </div>
@@ -1253,13 +1555,17 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                 <div class="chart-stats-section">
                     <h2>Chart Statistics</h2>
                     <div class="charts-flex">
-                        <div class="chart-card application-status">
-                            <h3>Application Status Overview</h3>
-                            <canvas id="applicationChart" width="500" height="350" style="height:350px;"></canvas>
-                    </div>
-                        <div class="chart-card gender-distribution">
-                            <h3>Gender Distribution</h3>
-                            <canvas id="genderChart" width="350" height="350" style="height:350px;"></canvas>
+                        <div class="chart-card municipality-distribution">
+                            <h3>Municipality Distribution</h3>
+                            <div class="chart-container" style="height: 300px;">
+                                <canvas id="municipalityChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card college-distribution">
+                            <h3>Current College Distribution</h3>
+                            <div class="chart-container" style="height: 300px;">
+                                <canvas id="collegeChart"></canvas>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1436,7 +1742,6 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                                     <p><strong>Birthdate:</strong> <?php echo htmlspecialchars($applicant['birthdate'] ?: '-'); ?></p>
                                     <p><strong>Gender:</strong> <?php echo htmlspecialchars($applicant['gender'] ?: '-'); ?></p>
                                     <p><strong>Civil Status:</strong> <?php echo htmlspecialchars($applicant['civil_status'] ?: '-'); ?></p>
-                                    <p><strong>Nationality:</strong> <?php echo htmlspecialchars($applicant['nationality'] ?: '-'); ?></p>
                                     <p><strong>Place of Birth:</strong> <?php echo htmlspecialchars($applicant['place_of_birth'] ?: '-'); ?></p>
                                     <p><strong>Degree:</strong> <?php echo htmlspecialchars($applicant['degree'] ?: '-'); ?></p>
                                     <p><strong>Course:</strong> <?php echo htmlspecialchars($applicant['course'] ?: '-'); ?></p>
@@ -1495,21 +1800,21 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                                     <p><strong>Certificate of Registration:</strong> 
                                         <?php 
                                         echo isset($applicant['documents']['cor']) 
-                                            ? '<a href="' . htmlspecialchars($applicant['documents']['cor']) . '" target="_blank">View</a>' 
+                                            ? '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['cor']) . '\', \'Certificate of Registration\')">View</button>' 
                                             : '-'; 
                                         ?>
                                     </p>
                                     <p><strong>Certificate of Indigency:</strong> 
                                         <?php 
                                         echo isset($applicant['documents']['indigency']) 
-                                            ? '<a href="' . htmlspecialchars($applicant['documents']['indigency']) . '" target="_blank">View</a>' 
+                                            ? '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['indigency']) . '\', \'Certificate of Indigency\')">View</button>' 
                                             : '-'; 
                                         ?>
                                     </p>
                                     <p><strong>Voter Certificate:</strong> 
                                         <?php 
                                         echo isset($applicant['documents']['voter']) 
-                                            ? '<a href="' . htmlspecialchars($applicant['documents']['voter']) . '" target="_blank">View</a>' 
+                                            ? '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['voter']) . '\', \'Voter Certificate\')">View</button>' 
                                             : '-'; 
                                         ?>
                                     </p>
@@ -1661,6 +1966,165 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         <div class="loading-modal-content">
             <div class="spinner"></div>
             <p>Uploading, please wait...</p>
+        </div>
+    </div>
+
+    <!-- Stats Modals -->
+    <div id="total-modal" class="modal stats-modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('total-modal')">×</span>
+            <h3>Total Applicants</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Contact Number</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($all_applicants as $applicant): ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($applicant['lastname'] . ', ' . $applicant['firstname'] . ' ' . $applicant['middlename']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['email']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['contact_no']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['application_status'] ?: 'Not Yet Submitted'); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="approved-modal" class="modal stats-modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('approved-modal')">×</span>
+            <h3>Approved Applicants</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Contact Number</th>
+                            <th>Claim Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($all_applicants as $applicant): 
+                            if ($applicant['application_status'] === 'Approved'): ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($applicant['lastname'] . ', ' . $applicant['firstname'] . ' ' . $applicant['middlename']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['email']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['contact_no']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['claim_status'] ?: 'Not Claimed'); ?></td>
+                            </tr>
+                        <?php endif; endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="denied-modal" class="modal stats-modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('denied-modal')">×</span>
+            <h3>Denied Applicants</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Contact Number</th>
+                            <th>Municipality</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($all_applicants as $applicant): 
+                            if ($applicant['application_status'] === 'Denied'): ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($applicant['lastname'] . ', ' . $applicant['firstname'] . ' ' . $applicant['middlename']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['email']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['contact_no']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['municipality']); ?></td>
+                            </tr>
+                        <?php endif; endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Under Review Modal -->
+    <div id="under-review-modal" class="modal stats-modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('under-review-modal')">×</span>
+            <h3>Pending Applicants</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Contact Number</th>
+                            <th>Municipality</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($all_applicants as $applicant): 
+                            if ($applicant['application_status'] === 'Under Review'): ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($applicant['lastname'] . ', ' . $applicant['firstname'] . ' ' . $applicant['middlename']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['email']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['contact_no']); ?></td>
+                                <td><?php echo htmlspecialchars($applicant['municipality']); ?></td>
+                            </tr>
+                        <?php endif; endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Modal HTML -->
+    <div class="success-modal" id="success-modal">
+        <div class="success-modal-content">
+            <button class="close-btn" onclick="hideSuccessModal()">&times;</button>
+            <i class="fas fa-check-circle success-icon"></i>
+            <h3>Upload Successful!</h3>
+            <p>The claim photo has been uploaded successfully.</p>
+            <button class="ok-btn" onclick="hideSuccessModal()">OK</button>
+        </div>
+    </div>
+
+    <!-- Document Viewer Modal -->
+    <div id="documentModal" class="modal document-modal">
+        <div class="modal-content document-modal-content">
+            <span class="close-btn" onclick="closeDocumentModal()">&times;</span>
+            <h3 id="documentTitle">Document Preview</h3>
+            <div class="document-container">
+                <div class="pdf-toolbar">
+                    <div class="pdf-controls">
+                        <button class="pdf-btn" onclick="zoomOut()"><i class="fas fa-search-minus"></i></button>
+                        <select id="zoomLevel" onchange="setZoom(this.value)">
+                            <option value="50">50%</option>
+                            <option value="75">75%</option>
+                            <option value="100" selected>100%</option>
+                            <option value="125">125%</option>
+                            <option value="150">150%</option>
+                            <option value="200">200%</option>
+                        </select>
+                        <button class="pdf-btn" onclick="zoomIn()"><i class="fas fa-search-plus"></i></button>
+                    </div>
+                </div>
+                <div class="pdf-viewer">
+                    <iframe id="documentViewer" width="100%" height="100%" frameborder="0"></iframe>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1945,9 +2409,12 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                 })
                 .then(response => response.text())
                 .then(() => {
-                    stopPhotoCapture();
-                    
-                    window.location.href = 'admindashboard.php?view=qrscanner';
+                    hideLoadingModal();
+                    showSuccessModal();
+                    // Add a delay before redirecting to allow the user to see the success message
+                    setTimeout(() => {
+                        window.location.href = 'admindashboard.php?view=qrscanner';
+                    }, 3000);
                 })
                 .catch(error => {
                     hideLoadingModal(); 
@@ -2001,7 +2468,35 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         }
 
         function openScheduleModal(modalId) {
-            document.getElementById(modalId).style.display = 'block';
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.style.display = 'block';
+                
+                // Get the date input field
+                const dateInput = modal.querySelector('input[type="date"]');
+                if (dateInput) {
+                    // Fetch the application deadline
+                    fetch('admindashboard.php?ajax=get_deadline')
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success && data.deadline) {
+                                // Set the minimum date to the day after the deadline
+                                const deadline = new Date(data.deadline);
+                                deadline.setDate(deadline.getDate() + 1);
+                                const minDate = deadline.toISOString().split('T')[0];
+                                dateInput.min = minDate;
+                                
+                                // If the current value is before the minimum date, clear it
+                                if (dateInput.value && dateInput.value < minDate) {
+                                    dateInput.value = '';
+                                }
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching deadline:', error);
+                        });
+                }
+            }
         }
 
         function closeScheduleModal(modalId) {
@@ -2139,6 +2634,647 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                 button.innerHTML = 'View All Information <i class="fas fa-chevron-down"></i>';
             }
         }
+
+        if (document.getElementById('municipalityChart')) {
+            // Municipality Chart
+            const ctxMunicipality = document.getElementById('municipalityChart').getContext('2d');
+            if (ctxMunicipality) {
+                const municipalityData = <?php echo json_encode($municipality_stats); ?>;
+                console.log('Municipality Data:', municipalityData);
+                
+                new Chart(ctxMunicipality, {
+                    type: 'bar',
+                    data: {
+                        labels: municipalityData.map(item => item.municipality),
+                        datasets: [
+                            {
+                                label: 'Total Applicants',
+                                data: municipalityData.map(item => parseInt(item.total_count) || 0),
+                                backgroundColor: '#4f46e5',
+                                borderColor: '#4338ca',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            },
+                            {
+                                label: 'Approved',
+                                data: municipalityData.map(item => parseInt(item.approved_count) || 0),
+                                backgroundColor: '#22c55e',
+                                borderColor: '#16a34a',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            },
+                            {
+                                label: 'Denied',
+                                data: municipalityData.map(item => parseInt(item.denied_count) || 0),
+                                backgroundColor: '#ef4444',
+                                borderColor: '#dc2626',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        layout: {
+                            padding: {
+                                left: 10,
+                                right: 10,
+                                top: 20,
+                                bottom: 10
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1,
+                                    font: {
+                                        size: 10
+                                    }
+                                },
+                                grid: {
+                                    display: true
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    maxRotation: 45,
+                                    minRotation: 45,
+                                    font: {
+                                        size: 10
+                                    },
+                                    autoSkip: true,
+                                    maxTicksLimit: 10
+                                },
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: {
+                                    font: {
+                                        size: 12
+                                    },
+                                    usePointStyle: true,
+                                    padding: 20
+                                }
+                            },
+                            tooltip: {
+                                enabled: true,
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                titleFont: {
+                                    size: 12
+                                },
+                                bodyFont: {
+                                    size: 12
+                                },
+                                padding: 10,
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': ' + context.parsed.y;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // College Chart
+            const ctxCollege = document.getElementById('collegeChart').getContext('2d');
+            if (ctxCollege) {
+                const collegeData = <?php echo json_encode($college_stats); ?>;
+                console.log('College Data:', collegeData);
+                
+                new Chart(ctxCollege, {
+                    type: 'bar',
+                    data: {
+                        labels: collegeData.map(item => item.current_college),
+                        datasets: [
+                            {
+                                label: 'Total Applicants',
+                                data: collegeData.map(item => parseInt(item.total_count) || 0),
+                                backgroundColor: '#4f46e5',
+                                borderColor: '#4338ca',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            },
+                            {
+                                label: 'Approved',
+                                data: collegeData.map(item => parseInt(item.approved_count) || 0),
+                                backgroundColor: '#22c55e',
+                                borderColor: '#16a34a',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            },
+                            {
+                                label: 'Denied',
+                                data: collegeData.map(item => parseInt(item.denied_count) || 0),
+                                backgroundColor: '#ef4444',
+                                borderColor: '#dc2626',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        layout: {
+                            padding: {
+                                left: 10,
+                                right: 10,
+                                top: 20,
+                                bottom: 10
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1,
+                                    font: {
+                                        size: 10
+                                    }
+                                },
+                                grid: {
+                                    display: true
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    maxRotation: 45,
+                                    minRotation: 45,
+                                    font: {
+                                        size: 10
+                                    },
+                                    autoSkip: true,
+                                    maxTicksLimit: 10
+                                },
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: {
+                                    font: {
+                                        size: 12
+                                    },
+                                    usePointStyle: true,
+                                    padding: 20
+                                }
+                            },
+                            tooltip: {
+                                enabled: true,
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                titleFont: {
+                                    size: 12
+                                },
+                                bodyFont: {
+                                    size: 12
+                                },
+                                padding: 10,
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': ' + context.parsed.y;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Add these functions
+        function openStatsModal(modalType) {
+            const modal = document.getElementById(modalType);
+            if (modal) {
+                modal.style.display = 'block';
+                document.body.style.overflow = 'hidden';
+            }
+        }
+
+        function closeStatsModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        function showSuccessModal() {
+            const modal = document.getElementById('success-modal');
+            if (modal) {
+                modal.style.display = 'flex';
+            }
+        }
+
+        function hideSuccessModal() {
+            const modal = document.getElementById('success-modal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        // Modify the existing upload success handler to show both modals in sequence
+        function handleUploadSuccess() {
+            hideLoadingModal();
+            showSuccessModal();
+        }
+
+        // Add click-outside-to-close for success modal
+        document.addEventListener('DOMContentLoaded', function() {
+            const successModal = document.getElementById('success-modal');
+            if (successModal) {
+                successModal.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        hideSuccessModal();
+                    }
+                });
+            }
+        });
+
+        // Modify the photo upload handler JavaScript
+        async function uploadPhoto() {
+            showLoadingModal();
+            const canvas = document.getElementById('photo-canvas');
+            const imageData = canvas.toDataURL('image/png');
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'action=save_photo&image_data=' + encodeURIComponent(imageData)
+                });
+
+                if (response.ok) {
+                    hideLoadingModal();
+                    showSuccessModal();
+                    // Add a delay before redirecting to allow the user to see the success message
+                    setTimeout(() => {
+                        window.location.href = 'admindashboard.php?view=qrscanner';
+                    }, 2000);
+                } else {
+                    hideLoadingModal();
+                    alert('Failed to upload photo. Please try again.');
+                }
+            } catch (error) {
+                hideLoadingModal();
+                alert('Error uploading photo: ' + error.message);
+            }
+        }
+
+        // Initialize charts when document is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            // Municipality Chart
+            const ctxMunicipality = document.getElementById('municipalityChart')?.getContext('2d');
+            if (ctxMunicipality) {
+                const municipalityData = <?php echo json_encode($municipality_stats); ?>;
+                console.log('Municipality Data:', municipalityData);
+                
+                new Chart(ctxMunicipality, {
+                    type: 'bar',
+                    data: {
+                        labels: municipalityData.map(item => item.municipality),
+                        datasets: [
+                            {
+                                label: 'Total Applicants',
+                                data: municipalityData.map(item => parseInt(item.total_count) || 0),
+                                backgroundColor: '#4f46e5',
+                                borderColor: '#4338ca',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            },
+                            {
+                                label: 'Approved',
+                                data: municipalityData.map(item => parseInt(item.approved_count) || 0),
+                                backgroundColor: '#22c55e',
+                                borderColor: '#16a34a',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            },
+                            {
+                                label: 'Denied',
+                                data: municipalityData.map(item => parseInt(item.denied_count) || 0),
+                                backgroundColor: '#ef4444',
+                                borderColor: '#dc2626',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        layout: {
+                            padding: {
+                                left: 10,
+                                right: 10,
+                                top: 20,
+                                bottom: 10
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1,
+                                    font: {
+                                        size: 10
+                                    }
+                                },
+                                grid: {
+                                    display: true
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    maxRotation: 45,
+                                    minRotation: 45,
+                                    font: {
+                                        size: 10
+                                    },
+                                    autoSkip: true,
+                                    maxTicksLimit: 10
+                                },
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: {
+                                    font: {
+                                        size: 12
+                                    },
+                                    usePointStyle: true,
+                                    padding: 20
+                                }
+                            },
+                            tooltip: {
+                                enabled: true,
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                titleFont: {
+                                    size: 12
+                                },
+                                bodyFont: {
+                                    size: 12
+                                },
+                                padding: 10,
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': ' + context.parsed.y;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // College Chart
+            const ctxCollege = document.getElementById('collegeChart')?.getContext('2d');
+            if (ctxCollege) {
+                const collegeData = <?php echo json_encode($college_stats); ?>;
+                console.log('College Data:', collegeData);
+                
+                new Chart(ctxCollege, {
+                    type: 'bar',
+                    data: {
+                        labels: collegeData.map(item => item.current_college),
+                        datasets: [
+                            {
+                                label: 'Total Applicants',
+                                data: collegeData.map(item => parseInt(item.total_count) || 0),
+                                backgroundColor: '#4f46e5',
+                                borderColor: '#4338ca',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            },
+                            {
+                                label: 'Approved',
+                                data: collegeData.map(item => parseInt(item.approved_count) || 0),
+                                backgroundColor: '#22c55e',
+                                borderColor: '#16a34a',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            },
+                            {
+                                label: 'Denied',
+                                data: collegeData.map(item => parseInt(item.denied_count) || 0),
+                                backgroundColor: '#ef4444',
+                                borderColor: '#dc2626',
+                                borderWidth: 1,
+                                maxBarThickness: 30,
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.9
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        layout: {
+                            padding: {
+                                left: 10,
+                                right: 10,
+                                top: 20,
+                                bottom: 10
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1,
+                                    font: {
+                                        size: 10
+                                    }
+                                },
+                                grid: {
+                                    display: true
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    maxRotation: 45,
+                                    minRotation: 45,
+                                    font: {
+                                        size: 10
+                                    },
+                                    autoSkip: true,
+                                    maxTicksLimit: 10
+                                },
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: {
+                                    font: {
+                                        size: 12
+                                    },
+                                    usePointStyle: true,
+                                    padding: 20
+                                }
+                            },
+                            tooltip: {
+                                enabled: true,
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                titleFont: {
+                                    size: 12
+                                },
+                                bodyFont: {
+                                    size: 12
+                                },
+                                padding: 10,
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': ' + context.parsed.y;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        let currentZoom = 100;
+        const zoomStep = 25;
+        const maxZoom = 200;
+        const minZoom = 50;
+
+        function zoomIn() {
+            if (currentZoom < maxZoom) {
+                currentZoom += zoomStep;
+                updateZoom();
+            }
+        }
+
+        function zoomOut() {
+            if (currentZoom > minZoom) {
+                currentZoom -= zoomStep;
+                updateZoom();
+            }
+        }
+
+        function resetZoom() {
+            currentZoom = 100;
+            updateZoom();
+        }
+
+        function updateZoom() {
+            const viewer = document.getElementById('documentViewer');
+            viewer.style.width = `${currentZoom}%`;
+        }
+
+        function showDocumentModal(documentUrl, title) {
+            const modal = document.getElementById('documentModal');
+            const viewer = document.getElementById('documentViewer');
+            const docTitle = document.getElementById('documentTitle');
+            
+            docTitle.textContent = title;
+            viewer.src = documentUrl;
+            document.getElementById('zoomLevel').value = '100';
+            modal.style.display = 'block';
+            document.body.style.overflow = 'hidden';
+        }
+
+        function setZoom(value) {
+            const viewer = document.getElementById('documentViewer');
+            viewer.style.width = value + '%';
+            if (value > 100) {
+                viewer.style.transform = `scale(${value/100})`;
+                viewer.style.transformOrigin = 'top left';
+            } else {
+                viewer.style.transform = 'none';
+            }
+        }
+
+        function zoomIn() {
+            const select = document.getElementById('zoomLevel');
+            const currentIndex = select.selectedIndex;
+            if (currentIndex < select.options.length - 1) {
+                select.selectedIndex = currentIndex + 1;
+                setZoom(select.value);
+            }
+        }
+
+        function zoomOut() {
+            const select = document.getElementById('zoomLevel');
+            const currentIndex = select.selectedIndex;
+            if (currentIndex > 0) {
+                select.selectedIndex = currentIndex - 1;
+                setZoom(select.value);
+            }
+        }
+
+        function closeDocumentModal() {
+            const modal = document.getElementById('documentModal');
+            const viewer = document.getElementById('documentViewer');
+            
+            viewer.src = '';
+            modal.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
+        // Close document modal when clicking outside
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('documentModal');
+            if (event.target === modal) {
+                closeDocumentModal();
+            }
+        });
     </script>
 </body>
 </html>

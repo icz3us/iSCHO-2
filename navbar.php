@@ -80,12 +80,44 @@
       display: flex;
     }
   }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .logo a {
+    display: flex;
+    align-items: center;
+  }
+
+  .logo h3 {
+    color: #1f2937;
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  @media (max-width: 768px) {
+    .logo h3 {
+        font-size: 1rem;
+    }
+  }
+
+  @media (max-width: 576px) {
+    .logo h3 {
+        display: none;
+    }
+  }
 </style>
 
 <nav>
-  <div class="logo"><a href="home.php">
-    <img src="./images/logo1.png" alt="Logo">
-</a>
+  <div class="logo">
+    <a href="home.php">
+      <img src="./images/logo1.png" alt="Logo">
+    </a>
+    <h3>Integrated Scholarship Application Portal</h3>
   </div>
   <div class="menu-toggle" id="menu-toggle">
     <span></span>

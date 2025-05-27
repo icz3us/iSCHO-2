@@ -33,7 +33,7 @@ if (empty($token)) {
         $user_id = $token_data['user_id'];
 
         
-        $stmt = $pdo->prepare("SELECT id, role FROM users WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT id, role, password FROM users WHERE id = ?");
         $stmt->execute([$user_id]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -61,24 +61,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
         $reset_error = "Password must be at least 8 characters long.";
     } else {
         try {
-            $pdo->beginTransaction();
+            // Check if the new password matches the current password
+            if (password_verify($new_password, $user['password'])) {
+                $reset_error = "New password cannot be the same as your previous password.";
+            } else {
+                $pdo->beginTransaction();
 
-            
-            $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-            $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
-            $stmt->execute([$hashed_password, $user_id]);
+                
+                $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
+                $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
+                $stmt->execute([$hashed_password, $user_id]);
 
-            
-            $stmt = $pdo->prepare("UPDATE password_reset_tokens SET used = 1 WHERE token = ?");
-            $stmt->execute([$token]);
+                
+                $stmt = $pdo->prepare("UPDATE password_reset_tokens SET used = 1 WHERE token = ?");
+                $stmt->execute([$token]);
 
-            $pdo->commit();
+                $pdo->commit();
 
-            $reset_success = "Password reset successfully. Please log in with your new password.";
-            $show_form = false; 
+                $reset_success = "Password reset successfully. Please log in with your new password.";
+                $show_form = false; 
 
-            
-            header('Refresh: 3; url=login.php');
+                
+                header('Refresh: 3; url=login.php');
+            }
         } catch (PDOException $e) {
             $pdo->rollBack();
             $reset_error = "Failed to reset password: " . $e->getMessage();
@@ -117,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
         }
 
         body {
-            background: url('./images/gc1.jpg') no-repeat center center fixed;
+            background: url('./images/bg.jpg') no-repeat center center fixed;
             background-size: cover;
             color: var(--text-color);
             min-height: 100vh;

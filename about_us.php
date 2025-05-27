@@ -205,6 +205,82 @@
                 font-size: 0.9rem;
             }
         }
+
+        /* Contact Info Section Styles */
+        .contact-info {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 3rem;
+            flex-wrap: wrap;
+        }
+
+        .info-card {
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            padding: 2rem;
+            border-radius: 15px;
+            text-align: center;
+            min-width: 250px;
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .info-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at top right, rgba(255,255,255,0.2), transparent 70%);
+            pointer-events: none;
+        }
+
+        .info-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .info-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            opacity: 0.9;
+        }
+
+        .info-card h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: white;
+        }
+
+        .info-card p, .info-card a {
+            font-size: 1rem;
+            color: rgba(255, 255, 255, 0.9);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .info-card a:hover {
+            color: white;
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .contact-info {
+                flex-direction: column;
+                align-items: center;
+                gap: 1rem;
+            }
+
+            .info-card {
+                width: 100%;
+                max-width: 300px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -215,13 +291,32 @@
     <div class="hero-section">
         <h1>About Us</h1>
         <p>
-        We are Icon Zeus Gonzales and Alan Michael Batac, Gordon College IT students and aspiring developers passionate about building digital solutions that address real-world problems. Our project, iSCHO: Integrated Scholarship Application & Management Portal, is designed to streamline and enhance the scholarship application process for both students and administrators through a secure, user-friendly, and efficient online platform.
+        iSCHO (Integrated Scholarship Application Portal) is your one-stop scholarship application portal designed to simplify the scholarship process. It empowers students to easily apply for and manage scholarship opportunities through a user-friendly interface and seamless navigation, connecting you to your educational dreams—hassle-free. 
         </p>
     </div>
 
     <!-- Team Section -->
     <div class="team-section">
         <h2>Meet Us</h2>
+        
+        <!-- Contact Info Section -->
+        <div class="contact-info">
+            <div class="info-card">
+                <div class="info-icon">
+                    <i class="fas fa-code"></i>
+                </div>
+                <h3>Developed by</h3>
+                <p>iSCHO Team</p>
+            </div>
+            <div class="info-card">
+                <div class="info-icon">
+                    <i class="fas fa-envelope"></i>
+                </div>
+                <h3>Contact Us</h3>
+                <a href="mailto:ischobsit@gmail.com">ischobsit@gmail.com</a>
+            </div>
+        </div>
+
         <div class="team-grid">
             <!-- Batac, Alan Michael -->
             <div class="team-member">

@@ -1,7 +1,6 @@
 <?php
 require './route_guard.php';
 
-// Remove all tokens table logic. Only use JWT for session validation.
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
@@ -48,10 +47,9 @@ $user_personal = [];
 $user_residency = [];
 $user_fam = [];
 $user_docs = [];
-$contact_no = ''; // Add this line to store contact number
+$contact_no = ''; 
 
 try {
-    // Fetch contact number from users table
     $stmt = $pdo->prepare("SELECT contact_no FROM users WHERE id = ?");
     $stmt->execute([$user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -128,7 +126,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
     $birthdate = trim($_POST['birthdate'] ?? '');
     $municipality = trim($_POST['municipality'] ?? '');
     $barangay = trim($_POST['barangay'] ?? '');
-    $nationality = trim($_POST['nationality'] ?? '');
     $place_of_birth = trim($_POST['place_of_birth'] ?? '');
 
     // Educational Information
@@ -179,10 +176,9 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
         'sex' => $sex,
         'civil_status' => $civil_status,
         'birthdate' => $birthdate,
-        'contact_no' => trim($_POST['contact_no'] ?? ''), // Add this line
+        'contact_no' => trim($_POST['contact_no'] ?? ''), 
         'municipality' => $municipality,
         'barangay' => $barangay,
-        'nationality' => $nationality,
         'place_of_birth' => $place_of_birth,
         'degree' => $degree,
         'course' => $course,
@@ -302,12 +298,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 $stmt = $pdo->prepare("
                     UPDATE users_info
                     SET sex = ?, civil_status = ?, birthdate = ?, municipality = ?, barangay = ?, 
-                        nationality = ?, place_of_birth = ?, application_status = ?
+                        place_of_birth = ?, application_status = ?
                     WHERE user_id = ?
                 ");
                 $stmt->execute([
                     $sex, $civil_status, $birthdate, $municipality, $barangay, 
-                    $nationality, $place_of_birth, 'Under Review', $user_id
+                    $place_of_birth, 'Under Review', $user_id
                 ]);
 
                 // Update user_personal
@@ -423,13 +419,13 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 // Insert into users_info
                 $stmt = $pdo->prepare("
                     INSERT INTO users_info (
-                        user_id, municipality, barangay, sex, civil_status, nationality, 
-                        birthdate, place_of_birth, application_status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        user_id, municipality, barangay, sex, civil_status,
+                        birthdate, place_of_birth
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
-                    $user_id, $municipality, $barangay, $sex, $civil_status, $nationality, 
-                    $birthdate, $place_of_birth, 'Under Review'
+                    $user_id, $municipality, $barangay, $sex, $civil_status,
+                    $birthdate, $place_of_birth
                 ]);
 
                 // Insert into user_personal
@@ -786,7 +782,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         <div class="header">
             <h1>Dashboard</h1>
             <div class="user-profile">
-                <span><div><?php echo htmlspecialchars($lastname . ', ' . $firstname); ?></div></span>
+                <span><div style="padding-right: 10px;"><?php echo htmlspecialchars($lastname . ', ' . $firstname); ?></div></span>
                 <div class="avatar" style="<?php echo !empty($user_docs['profile_picture_path']) ? 'background-image: url(\'' . htmlspecialchars($user_docs['profile_picture_path']) . '\'); background-size: cover; background-position: center;' : ''; ?>">
                     <?php if (empty($user_docs['profile_picture_path'])): ?>
                         <?php echo htmlspecialchars(substr($firstname, 0, 1)); ?>
@@ -797,30 +793,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         <div class="welcome-text">
             <h2>Welcome to the Student Dashboard</h2>
-            <p><b>Track your scholarship applications and stay updated with important notices.</b></p>
+            <p><i class="fas fa-info-circle"></i> Track your scholarship applications and stay updated with important notices.</p>
         </div>
 
         <!-- Success/Error Messages -->
         <?php if (isset($_SESSION['profile_picture_success'])): ?>
         <div class="success-message">
+            <i class="fas fa-check-circle"></i>
             <?php echo $_SESSION['profile_picture_success']; unset($_SESSION['profile_picture_success']); ?>
         </div>
         <?php endif; ?>
 
         <?php if (isset($_SESSION['profile_picture_error'])): ?>
         <div class="error-message">
+            <i class="fas fa-exclamation-circle"></i>
             <?php echo $_SESSION['profile_picture_error']; unset($_SESSION['profile_picture_error']); ?>
         </div>
         <?php endif; ?>
 
         <?php if (isset($_SESSION['application_success'])): ?>
         <div class="success-message">
+            <i class="fas fa-check-circle"></i>
             <?php echo $_SESSION['application_success']; unset($_SESSION['application_success']); ?>
         </div>
         <?php endif; ?>
         
         <?php if (isset($_SESSION['application_error'])): ?>
         <div class="error-message">
+            <i class="fas fa-exclamation-circle"></i>
             <?php echo $_SESSION['application_error']; unset($_SESSION['application_error']); ?>
         </div>
         <?php endif; ?>
@@ -838,7 +838,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <?php echo htmlspecialchars($application_status); ?>
                 </h3>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" onclick="scrollToNotices()" style="cursor: pointer;">
                 <i class="fas fa-bell"></i>
                 <h3><?php echo count($notices); ?></h3>
                 <p>New Notices</p>
@@ -847,9 +847,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         <!-- Claim Status Section -->
         <div class="section claim-status">
-            <h2>Claim Status</h2>
             <div class="stat-card">
-                <i class="fas fa-check-circle"></i>
+                <i class="fas fa-hand-holding-dollar"></i>
                 <p>Claim Status</p>
                 <h3 class="<?php echo strtolower($claim_status) === 'claimed' ? 'approved' : 'not-submitted'; ?>">
                     <?php echo htmlspecialchars($claim_status); ?>
@@ -864,7 +863,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         </div>
 
         <!-- Important Notices Section -->
-        <div class="section notices">
+        <div class="section notices" id="importantNotices">
             <h2>Important Notices</h2>
             <ul>
                 <?php if (empty($notices)): ?>
@@ -886,7 +885,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         <div class="header">
             <h1>Apply Scholarship</h1>
             <div class="user-profile">
-                <span><div><?php echo htmlspecialchars($lastname . ', ' . $firstname); ?></div></span>
+                <span><div style="padding-right: 10px;"><?php echo htmlspecialchars($lastname . ', ' . $firstname); ?></div></span>
                 <div class="avatar" style="<?php echo !empty($user_docs['profile_picture_path']) ? 'background-image: url(\'' . htmlspecialchars($user_docs['profile_picture_path']) . '\'); background-size: cover; background-position: center;' : ''; ?>">
                     <?php if (empty($user_docs['profile_picture_path'])): ?>
                         <?php echo htmlspecialchars(substr($firstname, 0, 1)); ?>
@@ -1043,13 +1042,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     </div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label for="nationality">Nationality <span class="required">*</span></label>
-                        <div class="input-group">
-                            <i class="fas fa-flag"></i>
-                            <input type="text" id="nationality" name="nationality" class="form-control" value="<?php echo htmlspecialchars($users_info['nationality'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                        </div>
-                    </div>
                     <div class="form-group">
                         <label for="place_of_birth">Place of Birth <span class="required">*</span></label>
                         <div class="input-group">
@@ -1502,7 +1494,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         <p><strong>Contact Number:</strong> <span id="review_contact_no"><?php echo htmlspecialchars($contact_no); ?></span></p>
                         <p><strong>Municipality:</strong> <span id="review_municipality"><?php echo htmlspecialchars($users_info['municipality'] ?? 'Not provided'); ?></span></p>
                         <p><strong>Barangay:</strong> <span id="review_barangay"><?php echo htmlspecialchars($users_info['barangay'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Nationality:</strong> <span id="review_nationality"><?php echo htmlspecialchars($users_info['nationality'] ?? 'Not provided'); ?></span></p>
                         <p><strong>Place of Birth:</strong> <span id="review_place_of_birth"><?php echo htmlspecialchars($users_info['place_of_birth'] ?? 'Not provided'); ?></span></p>
                         <p><strong>Degree:</strong> <span id="review_degree"><?php echo htmlspecialchars($user_personal['degree'] ?? 'Not provided'); ?></span></p>
                         <p><strong>Course:</strong> <span id="review_course"><?php echo htmlspecialchars($user_personal['course'] ?? 'Not provided'); ?></span></p>
@@ -1659,7 +1650,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         document.getElementById('review_contact_no').textContent = document.getElementById('contact_no').value || 'Not provided';
         document.getElementById('review_municipality').textContent = document.getElementById('municipality').value || 'Not provided';
         document.getElementById('review_barangay').textContent = document.getElementById('barangay').value || 'Not provided';
-        document.getElementById('review_nationality').textContent = document.getElementById('nationality').value || 'Not provided';
         document.getElementById('review_place_of_birth').textContent = document.getElementById('place_of_birth').value || 'Not provided';
         document.getElementById('review_degree').textContent = document.getElementById('track').value || 'Not provided';
         document.getElementById('review_course').textContent = document.getElementById('Course').value || 'Not provided';
@@ -1737,15 +1727,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     function toggleFAQ(idx) {
-        var answers = document.querySelectorAll('.faq-answer');
-        var questions = document.querySelectorAll('.faq-question');
-        answers.forEach(function(ans, i) {
+        const questions = document.querySelectorAll('.faq-question');
+        const answers = document.querySelectorAll('.faq-answer');
+        
+        answers.forEach((answer, i) => {
             if (i === idx) {
-                ans.style.display = ans.style.display === 'block' ? 'none' : 'block';
+                const isOpen = answer.classList.contains('show');
+                answer.classList.toggle('show');
                 questions[i].classList.toggle('open');
-            } else {
-                ans.style.display = 'none';
-                questions[i].classList.remove('open');
+                
+                // Close other FAQs
+                answers.forEach((otherAnswer, j) => {
+                    if (j !== idx) {
+                        otherAnswer.classList.remove('show');
+                        questions[j].classList.remove('open');
+                    }
+                });
             }
         });
     }
@@ -1790,6 +1787,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
     }
     handleViewParam();
+
+    function scrollToNotices() {
+        const noticesSection = document.getElementById('importantNotices');
+        if (noticesSection) {
+            noticesSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
 </script>
 <style>
 .faqs-content { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.07); padding: 2rem; margin-top: 2rem; }
@@ -1798,6 +1802,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 .faq-question { width: 100%; text-align: left; background: #f1f1f1; border: none; outline: none; padding: 1rem; font-size: 1.1rem; font-weight: 500; border-radius: 8px; cursor: pointer; transition: background 0.2s; }
 .faq-question.open, .faq-question:hover { background: #e0e7ff; }
 .faq-answer { display: none; padding: 1rem; background: #f9fafb; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb; margin-top: -8px; font-size: 1rem; }
+.stat-card {
+    transition: transform 0.2s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-3px);
+}
 </style>
 
 <script>
@@ -1924,7 +1935,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         formData.append('action', 'get_barangays');
                         formData.append('municipality', selectedMunicipality);
 
-                        fetch('login.php', {
+                        fetch('applicantdashboard.php', {
                             method: 'POST',
                             body: formData
                         })

@@ -121,7 +121,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset(
     $middlename = trim($_POST['middlename']);
     $sex = trim($_POST['sex']);
     $civil_status = trim($_POST['civil_status']);
-    $nationality = trim($_POST['nationality']);
     $birthdate = trim($_POST['birthdate']);
     $place_of_birth = trim($_POST['place_of_birth']);
     $contact_no = trim($_POST['contact_no']);
@@ -147,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset(
 
     // Validate age
     if (!validateAge($birthdate)) {
-        $register_error = "You must be at least 16 years old and not older than 100 years to register.";
+        $register_error = "You must be a valid age";
     }
 
     // Validate Philippine location
@@ -183,7 +182,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset(
             'middlename' => $middlename,
             'sex' => $sex,
             'civil_status' => $civil_status,
-            'nationality' => $nationality,
             'birthdate' => $birthdate,
             'place_of_birth' => $place_of_birth,
             'contact_no' => $contact_no,
@@ -321,8 +319,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset
 
                         $stmt = $pdo->prepare("
                             INSERT INTO users_info (
-                                user_id, municipality, barangay, sex, civil_status, nationality, birthdate, place_of_birth
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                user_id, municipality, barangay, sex, civil_status, birthdate, place_of_birth
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
                         ");
                         $stmt->execute([
                             $user_id,
@@ -330,7 +328,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset
                             $pending_data['barangay'],
                             $pending_data['sex'],
                             $pending_data['civil_status'],
-                            $pending_data['nationality'],
                             $pending_data['birthdate'],
                             $pending_data['place_of_birth']
                         ]);
@@ -490,7 +487,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         body {
-            background: url('./images/gc1.jpg') no-repeat center center fixed;
+            background: url('./images/bg.jpg') no-repeat center center fixed;
             background-size: cover;
             color: var(--text-color);
             min-height: 100vh;
@@ -518,7 +515,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             z-index: 2;
         }
 
-        .login-container, .register-container, .otp-container {
+        .login-container, .otp-container {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 10px 15px rgba(0, 0, 0, 0.03);
+            width: 100%;
+            max-width: 500px;
+            padding: 2rem;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .register-container {
             background-color: var(--card-bg);
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 10px 15px rgba(0, 0, 0, 0.03);
@@ -536,11 +543,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .login-header, .register-header, .otp-header {
             text-align: center;
             margin-bottom: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
         }
 
-        .login-header h1, .register-header h1, .otp-header h1 {
-            font-size: 1.75rem;
+        .login-header img {
+            width: 100px;
+            height: auto;
+            margin-bottom: 0.5rem;
+        }
+
+        .login-header h1 {
+            font-size: 1.5rem;
             font-weight: 600;
+            color: var(--text-color);
+        }
+
+        .login-header h2 {
+            font-size: 1.3rem;
+            font-weight: 500;
             color: var(--text-color);
         }
 
@@ -878,7 +901,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <div class="main-content">
         <div class="login-container">
             <div class="login-header">
-                <h1>Login Page</h1>
+                <img src="./images/logo1.png" alt="iSCHO Logo">
+                <h1>Integrated Scholarship Application Portal</h1>
+                <h2>Login Page</h2>
                 <p>Please enter your credentials to login</p>
             </div>
             
@@ -977,25 +1002,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             <label for="firstname">First Name</label>
                             <div class="input-group">
                                 <i class="fas fa-user"></i>
-                                <input type="text" id="firstname" name="firstname" class="form-control" required>
+                                <input type="text" id="firstname" name="firstname" class="form-control" required onkeypress="return /[a-zA-Z\s]/.test(event.key)">
                             </div>
-                            <div class="validation-text" id="firstname-validation">Should not contain numbers or special characters</div>
                         </div>
                         <div class="form-group">
                             <label for="lastname">Last Name</label>
                             <div class="input-group">
                                 <i class="fas fa-user"></i>
-                                <input type="text" id="lastname" name="lastname" class="form-control" required>
+                                <input type="text" id="lastname" name="lastname" class="form-control" required onkeypress="return /[a-zA-Z\s]/.test(event.key)">
                             </div>
-                            <div class="validation-text" id="lastname-validation">Should not contain numbers or special characters</div>
                         </div>
                         <div class="form-group">
                             <label for="middlename">Middle Name</label>
                             <div class="input-group">
                                 <i class="fas fa-user"></i>
-                                <input type="text" id="middlename" name="middlename" class="form-control">
+                                <input type="text" id="middlename" name="middlename" class="form-control" onkeypress="return /[a-zA-Z\s]/.test(event.key)">
                             </div>
-                            <div class="validation-text" id="middlename-validation">Should not contain numbers or special characters</div>
                         </div>
                     </div>
                     <div class="form-row">
@@ -1007,7 +1029,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <option value="">Select Sex</option>
                                     <option value="male">Male</option>
                                     <option value="female">Female</option>
-                                    <option value="other">Other</option>
                                 </select>
                             </div>
                         </div>
@@ -1025,26 +1046,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="nationality">Nationality</label>
-                            <div class="input-group">
-                                <i class="fas fa-globe"></i>
-                                <input type="text" id="nationality" name="nationality" class="form-control" required>
-                            </div>
-                        </div>
-                        <div class="form-group">
                             <label for="birthdate">Birthdate</label>
                             <div class="input-group">
                                 <i class="fas fa-calendar-alt"></i>
                                 <input type="date" id="birthdate" name="birthdate" class="form-control" required>
                             </div>
-                            <div class="validation-text" id="birthdate-validation">Must be at least 16 years old and not older than 100 years</div>
+                            <div class="validation-text" id="birthdate-validation">Must be a valid age</div>
                         </div>
                     </div>
                     <div class="form-row">
-                        <div class="form-group full-width">
+                        <div class="form-group">
                             <label for="place_of_birth">Place of Birth</label>
                             <div class="input-group">
-                                <i class="fas fa-map-marker-alt"></i>
+                                <i class="fas fa-map-pin"></i>
                                 <input type="text" id="place_of_birth" name="place_of_birth" class="form-control" required>
                             </div>
                         </div>
@@ -1054,16 +1068,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             <label for="contact_no">Contact No.</label>
                             <div class="input-group">
                                 <i class="fas fa-phone"></i>
-                                <input type="tel" id="contact_no" name="contact_no" class="form-control" required>
+                                <input type="text" id="contact_no" name="contact_no" class="form-control" required onkeypress="return /[0-9]/.test(event.key)" maxlength="11">
                             </div>
-                            <div class="validation-text" id="contact-validation">Must be a valid Philippine mobile number (e.g., 09XXXXXXXXX or +639XXXXXXXXX)</div>
+                            <div class="validation-text" id="contact-validation">Must be a valid Philippine mobile number (e.g., 09XXXXXXXXX)</div>
                         </div>
                         <div class="form-group">
-                            <label for="email">Email Address</label>
+                            <label for="reg-email">Email Address</label>
                             <div class="input-group">
                                 <i class="fas fa-envelope"></i>
-                                <input type="email" id="email" name="email" class="form-control" required>
+                                <input type="email" id="reg-email" name="email" class="form-control" required onInput="updateEmailValidation()">
                             </div>
+                            <div class="validation-text" id="email-validation">Please enter an email address</div>
                         </div>
                     </div>
                     <div class="form-row">
@@ -1071,7 +1086,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             <label for="reg-password">Password</label>
                             <div class="input-group">
                                 <i class="fas fa-lock"></i>
-                                <input type="password" id="reg-password" name="password" class="form-control" required pattern="(?=.*[A-Z])(?=.*[0-9]).*" title="Password must contain at least one uppercase letter and one number">
+                                <input type="password" id="reg-password" name="password" class="form-control" required pattern="(?=.*[A-Z])(?=.*[0-9]).*" title="Password must contain at least one uppercase letter and one number" onkeyup="validatePasswords()">
                                 <i class="fas fa-eye toggle-password" onclick="togglePassword('reg-password')"></i>
                             </div>
                             <div class="validation-text" id="password-validation">Must contain at least one uppercase letter and one number</div>
@@ -1080,9 +1095,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             <label for="reg-confirm-password">Confirm Password</label>
                             <div class="input-group">
                                 <i class="fas fa-lock"></i>
-                                <input type="password" id="reg-confirm-password" name="confirm_password" class="form-control" required>
+                                <input type="password" id="reg-confirm-password" name="confirm_password" class="form-control" required onkeyup="validatePasswords()">
                                 <i class="fas fa-eye toggle-password" onclick="togglePassword('reg-confirm-password')"></i>
                             </div>
+                            <div class="validation-text" id="confirm-password-validation"></div>
                         </div>
                     </div>
                 </div>
@@ -1160,6 +1176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <li><b>Notification:</b> Applicants will be notified of their application status via the portal and/or email.</li>
                     <li><b>Claiming Scholarship:</b> Approved applicants must present the required documents and QR code to claim their scholarship.</li>
                     <li><b>Changes to Terms:</b> The scholarship provider reserves the right to modify these terms at any time. Continued use of the portal constitutes acceptance of any changes.</li>
+                    <li><b>Email Validation:</b> Please use a valid email domain (e.g., gmail.com, yahoo.com, outlook.com, hotmail.com, live.com, aol.com, icloud.com, msn.com, me.com, mac.com, googlemail.com)</li>
                 </ol>
                 <p style="margin-top:1rem; font-size:0.95rem; color:#666;">By registering, you acknowledge that you have read, understood, and agreed to these terms and conditions.</p>
             </div>
@@ -1343,7 +1360,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             const validationText = document.getElementById('birthdate-validation');
             
             if (age < 16 || age > 100) {
-                input.setCustomValidity('You must be at least 16 years old and not older than 100 years');
+                input.setCustomValidity('You must be a valid age');
                 validationText.classList.add('invalid');
                 validationText.classList.remove('valid');
             } else {
@@ -1493,6 +1510,135 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         function closeTermsModal() {
             var termsModal = document.getElementById('termsModal');
             if (termsModal) termsModal.style.display = 'none';
+        }
+
+        function validatePasswords() {
+            const password = document.getElementById('reg-password').value;
+            const confirmPassword = document.getElementById('reg-confirm-password').value;
+            const confirmValidation = document.getElementById('confirm-password-validation');
+            const registerBtn = document.getElementById('registerBtn');
+            
+            if (confirmPassword === '') {
+                confirmValidation.textContent = 'Please confirm your password';
+                confirmValidation.className = 'validation-text';
+                return false;
+            } else if (password !== confirmPassword) {
+                confirmValidation.textContent = 'Passwords do not match';
+                confirmValidation.className = 'validation-text invalid';
+                return false;
+            } else {
+                confirmValidation.textContent = 'Passwords match';
+                confirmValidation.className = 'validation-text valid';
+                return true;
+            }
+        }
+
+        function validateForm() {
+            const requiredFields = document.querySelectorAll('#registerForm [required]');
+            const agreeTerms = document.getElementById('agree_terms');
+            const agreePrivacy = document.getElementById('agree_privacy');
+            const registerBtn = document.getElementById('registerBtn');
+            const password = document.getElementById('reg-password');
+            const confirmPassword = document.getElementById('reg-confirm-password');
+            const emailInput = document.getElementById('reg-email');
+            
+            let isValid = true;
+            
+            // Check all required fields
+            requiredFields.forEach(field => {
+                if (!field.value) isValid = false;
+            });
+            
+            // Check passwords match
+            if (password.value !== confirmPassword.value) isValid = false;
+            
+            // Check terms and privacy
+            if (!agreeTerms.checked || !agreePrivacy.checked) isValid = false;
+            
+            // Check email validity
+            if (emailInput && !validateEmail(emailInput.value)) isValid = false;
+            
+            // Enable/disable register button
+            registerBtn.disabled = !isValid;
+            registerBtn.style.backgroundColor = isValid ? '' : '#bdbdbd';
+            registerBtn.style.cursor = isValid ? 'pointer' : 'not-allowed';
+        }
+
+        // Add event listeners for form validation
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('registerForm');
+            const inputs = form.querySelectorAll('input, select');
+            
+            inputs.forEach(input => {
+                input.addEventListener('input', validateForm);
+                input.addEventListener('change', validateForm);
+            });
+            
+            // Initial validation
+            validateForm();
+        });
+
+        // List of valid email domains
+        const validEmailDomains = [
+            /* Popular Email Services */
+            'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'live.com', 'aol.com', 'icloud.com',
+            /* Academic Domains */
+            'edu.ph', 'edu', 'ac.uk', 'student.edu',
+            /* Business/Professional */
+            'msn.com', 'me.com', 'mac.com', 'googlemail.com',
+            /* Regional Yahoo Domains */
+            'yahoo.com.ph', 'yahoo.co.uk', 'yahoo.co.jp', 'yahoo.fr', 'yahoo.de', 'yahoo.it', 'yahoo.es', 'yahoo.ca',
+            /* Regional Domains */
+            'ymail.com', 'rocketmail.com'
+        ];
+
+        function validateEmail(email) {
+            if (!email) return false;
+            
+            // Basic email format validation
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) return false;
+
+            // Extract domain from email
+            const domain = email.split('@')[1].toLowerCase();
+            
+            // Check if domain is in valid domains list
+            return validEmailDomains.includes(domain);
+        }
+
+        function updateEmailValidation() {
+            const emailInput = document.getElementById('reg-email');
+            const emailValidation = document.getElementById('email-validation');
+            const registerBtn = document.getElementById('registerBtn');
+            const agreeTerms = document.getElementById('agree_terms');
+            const agreePrivacy = document.getElementById('agree_privacy');
+
+            if (emailInput && emailValidation) {
+                const email = emailInput.value;
+                const isValidEmail = validateEmail(email);
+
+                if (!email) {
+                    emailValidation.textContent = 'Please enter an email address';
+                    emailValidation.className = 'validation-text';
+                    emailInput.setCustomValidity('Please enter an email address');
+                } else if (!isValidEmail) {
+                    emailValidation.textContent = 'Please use a valid email domain';
+                    emailValidation.className = 'validation-text invalid';
+                    emailInput.setCustomValidity('Please use a valid email domain');
+                } else {
+                    emailValidation.textContent = 'Valid email domain';
+                    emailValidation.className = 'validation-text valid';
+                    emailInput.setCustomValidity('');
+                }
+
+                // Update register button state
+                if (registerBtn) {
+                    const canRegister = isValidEmail && agreeTerms.checked && agreePrivacy.checked;
+                    registerBtn.disabled = !canRegister;
+                    registerBtn.style.backgroundColor = canRegister ? '' : '#bdbdbd';
+                    registerBtn.style.cursor = canRegister ? 'pointer' : 'not-allowed';
+                }
+            }
         }
     </script>
 </body>

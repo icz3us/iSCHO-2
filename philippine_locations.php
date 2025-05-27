@@ -43,39 +43,116 @@ $philippineLocations = [
         'Subic' => [
             'Aningway-Sacatihan', 'Asinan', 'Baraca-Camachile', 'Batiawan', 'Calapacuan', 'Cawag', 'Ilwas', 'Mangan-Vaca', 'Matain', 'Naugsol', 'Pamatawan', 'San Isidro', 'San Jose', 'San Martin', 'Santa Rita', 'Wawandue'
         ]
+    ],
+    'Bataan' => [
+        'Abucay' => [
+            'Bangkal', 'Capitangan', 'Gabon', 'Laon', 'Mabatang', 'Omboy', 'Poblacion', 'Salian', 'Wawa'
+        ],
+        'Bagac' => [
+            'Banawang', 'Binuangan', 'Binukawan', 'Ibis', 'Pag-asa', 'Parang', 'Paysawan', 'Poblacion', 'Quinawan', 'San Antonio', 'Saysain', 'Talisay', 'Binukawan', 'Wawa'
+        ],
+        'Balanga' => [
+            'Bagumbayan', 'Cabog-Cabog', 'Cataning', 'Central', 'Cupang Proper', 'Cupang West', 'Dangcol', 'Ibayo', 'Malabia', 'Munting Batangas', 'Poblacion', 'Puerto Rivas Ibaba', 'Puerto Rivas Itaas', 'San Jose', 'Sibacan', 'Talisay', 'Tanato', 'Tenejero', 'Tortugas', 'Tuyo'
+        ],
+        'Dinalupihan' => [
+            'Aquino', 'Bangal', 'Bani', 'Bonifacio', 'Colo', 'Dalao', 'Daang Bago', 'Gen. Luna', 'Happy Valley', 'Luacan', 'Magsaysay', 'Naparing', 'Old San Jose', 'Pag-asa', 'Pagalanggang', 'Payangan', 'Pita', 'Poblacion', 'Rizal', 'Roosevelt', 'San Benito', 'San Isidro', 'San Pablo', 'San Ramon', 'Santa Isabel', 'Santo Rosario', 'Tucop'
+        ],
+        'Hermosa' => [
+            'Almacen', 'Antipolo', 'Bacong', 'Balsik', 'Bamban', 'Batong Dalig', 'Burgos', 'Cataning', 'Culis', 'Daungan', 'Mabiga', 'Mabuco', 'Maite', 'Palihan', 'Pandatung', 'Pulo', 'Saba', 'San Pedro', 'Sumalo', 'Tipo'
+        ],
+        'Limay' => [
+            'Alangan', 'Duale', 'Kitang 2 & Luz', 'Lamao', 'Landing', 'Poblacion', 'Reformista', 'San Francisco de Asis', 'St. Francis II', 'Townsite', 'Wawa'
+        ],
+        'Mariveles' => [
+            'Alion', 'Alas-asin', 'Baseco', 'Batangas II', 'Biaan', 'Cabcaben', 'Camaya', 'Ipag', 'Lucanin', 'Malaya', 'Mt. View', 'Poblacion', 'San Isidro', 'Sisiman', 'Townsite'
+        ],
+        'Morong' => [
+            'Binaritan', 'Mabayo', 'Nagbalayong', 'Poblacion', 'Sabang'
+        ],
+        'Orani' => [
+            'Apollo', 'Bagong Paraiso', 'Balut', 'Calero', 'Centro 1', 'Centro 2', 'Dona', 'Kabalutan', 'Masantol', 'Mulawin', 'Pag-asa', 'Palihan', 'Pantingan', 'Parang', 'Puksuan', 'Sibul', 'Silahis', 'Tala', 'Tapulao', 'Tenejero', 'Tugatog', 'Wawa'
+        ],
+        'Orion' => [
+            'Arellano', 'Bagumbayan', 'Balut', 'Bantan', 'Bilolo', 'Calungusan', 'Camachile', 'Capunitan', 'Daan Bago', 'Daan Bilolo', 'General Lim', 'Lati', 'Puting Buhangin', 'Sabatan', 'San Vicente', 'Santa Elena', 'Santo Domingo', 'Villa Angeles', 'Wakas'
+        ],
+        'Pilar' => [
+            'Ala-uli', 'Bagumbayan', 'Balut I', 'Balut II', 'Bantan Munti', 'Burgos', 'Del Rosario', 'Diwa', 'Landing', 'Liyang', 'Nagwaling', 'Panilao', 'Poblacion', 'Rizal', 'Santa Rosa', 'Wawa'
+        ],
+        'Samal' => [
+            'East Calaguiman', 'East Daang Bago', 'Gugo', 'Ibaba', 'Lalawigan', 'Palili', 'San Juan', 'San Roque', 'Santa Lucia', 'Sapa', 'Tabing Ilog', 'West Calaguiman', 'West Daang Bago'
+        ]
     ]
 ];
 
 
-function getAllMunicipalities() {
+function getAllMunicipalities($province = null) {
     global $philippineLocations;
-    return array_keys($philippineLocations['Zambales']);
+    
+    if ($province !== null) {
+        if (isset($philippineLocations[$province])) {
+            return array_keys($philippineLocations[$province]);
+        }
+        return [];
+    }
+    
+    $municipalities = [];
+    foreach ($philippineLocations as $provinceMunicipalities) {
+        $municipalities = array_merge($municipalities, array_keys($provinceMunicipalities));
+    }
+    return $municipalities;
 }
 
 
-function getBarangays($municipality) {
+function getBarangays($municipality, $province = null) {
     global $philippineLocations;
-    return isset($philippineLocations['Zambales'][$municipality]) ? $philippineLocations['Zambales'][$municipality] : [];
+    
+    if ($province !== null) {
+        return isset($philippineLocations[$province][$municipality]) 
+            ? $philippineLocations[$province][$municipality] 
+            : [];
+    }
+    
+    foreach ($philippineLocations as $provinceName => $provinceMunicipalities) {
+        if (isset($provinceMunicipalities[$municipality])) {
+            return $provinceMunicipalities[$municipality];
+        }
+    }
+    return [];
 }
 
 
-function validateLocation($municipality, $barangay) {
+function validateLocation($municipality, $barangay, $province = null) {
     global $philippineLocations;
     
-    
+    // Clean and standardize input
     $municipality = ucwords(strtolower($municipality));
     $barangay = ucwords(strtolower($barangay));
+    if ($province !== null) {
+        $province = ucwords(strtolower($province));
+    }
     
+    if ($province !== null) {
+        // Check specific province
+        if (!isset($philippineLocations[$province])) {
+            return false;
+        }
     
-    if (!isset($philippineLocations['Zambales'][$municipality])) {
+        if (!isset($philippineLocations[$province][$municipality])) {
         return false;
     }
     
-    
-    if (!in_array($barangay, $philippineLocations['Zambales'][$municipality])) {
-        return false;
+        return in_array($barangay, $philippineLocations[$province][$municipality]);
     }
     
-    return true;
+    // Check all provinces if province not specified
+    foreach ($philippineLocations as $provinceMunicipalities) {
+        if (isset($provinceMunicipalities[$municipality])) {
+            if (in_array($barangay, $provinceMunicipalities[$municipality])) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
 }
 ?> 
