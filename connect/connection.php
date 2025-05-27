@@ -1,8 +1,8 @@
 <?php
-$host = 'localhost';
+$host = 'ischo.cd2yqo8eytpf.ap-southeast-1.rds.amazonaws.com';
 $dbname = 'ischo2';
-$user = 'root';
-$pass = '';
+$user = 'admin';
+$pass = 'X7!pL#e9Bz^W';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname", $user, $pass);
