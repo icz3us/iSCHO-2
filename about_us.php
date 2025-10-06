@@ -318,14 +318,14 @@
         </div>
 
         <div class="team-grid">
-            <!-- Batac, Alan Michael -->
+            <!-- Lacuesta, Hans Marcus Roberto -->
             <div class="team-member">
                 <div class="avatar">
-                    <img src="./images/batac.png" alt="Batac, Alan Michael">
+                    <img src="./images/lacuesta.jpg" alt="Lacuesta, Hans Marcus Roberto">
                 </div>
-                <h3>Batac, Alan Michael</h3>
+                <h3>Lacuesta, Hans Marcus Roberto</h3>
                 <p>
-                I am Alan Michael Batac, a passionate Information Technology student and aspiring software developer. I believe in the power of technology to create efficient, user-centered systems that solve everyday problems. With iSCHO, I aspire to contribute to digital transformation in educational institutions by simplifying scholarship management and improving communication between students and administrators.
+                I am Hans Marcus Roberto Lacuesta, a passionate Information Technology student and aspiring software developer. I believe in the power of technology to create efficient, user-centered systems that solve everyday problems. With iSCHO, I aspire to contribute to digital transformation in educational institutions by simplifying scholarship management and improving communication between students and administrators.
                 </p>
             </div>
 

@@ -62,6 +62,8 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_photo') {
         if (isset($_POST['image_data'])) {
+            error_log("Starting claim photo process for user_id: " . $user_id);
+            
             $image_data = $_POST['image_data'];
             $image_data = str_replace('data:image/png;base64,', '', $image_data);
             $image_data = str_replace(' ', '+', $image_data);
@@ -72,10 +74,41 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
                 mkdir('claim_photos', 0777, true);
             }
             file_put_contents($file_name, $data);
+            error_log("Saved claim photo to: " . $file_name);
 
             try {
-                $stmt = $pdo->prepare("INSERT INTO user_docs (user_id, claim_photo_path) VALUES (?, ?) ON DUPLICATE KEY UPDATE claim_photo_path = ?");
-                $stmt->execute([$user_id, $file_name, $file_name]);
+                // Start transaction
+                $pdo->beginTransaction();
+                error_log("Started database transaction");
+
+                // First check if user_docs record exists
+                $stmt = $pdo->prepare("SELECT * FROM user_docs WHERE user_id = ?");
+                $stmt->execute([$user_id]);
+                $existing_docs = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                if ($existing_docs) {
+                    // Update existing record
+                    $stmt = $pdo->prepare("UPDATE user_docs SET claim_photo_path = ? WHERE user_id = ?");
+                    $stmt->execute([$file_name, $user_id]);
+                    error_log("Updated existing user_docs record");
+                } else {
+                    // Insert new record with empty paths for required documents
+                    $stmt = $pdo->prepare("INSERT INTO user_docs (user_id, claim_photo_path, cor_file_path, indigency_file_path, voter_file_path, profile_picture_path) VALUES (?, ?, '', '', '', '')");
+                    $stmt->execute([$user_id, $file_name]);
+                    error_log("Inserted new user_docs record");
+                }
+
+                // Update the claim_status in users_info to 'Claimed'
+                $stmt = $pdo->prepare("UPDATE users_info SET claim_status = 'Claimed', claimed_at = NOW() WHERE user_id = ?");
+                $result = $stmt->execute([$user_id]);
+                $rowsAffected = $stmt->rowCount();
+                error_log("Updated users_info table. Rows affected: " . $rowsAffected);
+
+                // Mark the token as used in claim_tokens
+                $stmt = $pdo->prepare("UPDATE claim_tokens SET used = 1, used_at = NOW() WHERE user_id = ? AND used = 0 ORDER BY created_at DESC LIMIT 1");
+                $result = $stmt->execute([$user_id]);
+                $rowsAffected = $stmt->rowCount();
+                error_log("Updated claim_tokens table. Rows affected: " . $rowsAffected);
 
                 // Fetch applicant details for email
                 $stmt = $pdo->prepare("
@@ -87,16 +120,9 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
                 $applicant = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($applicant) {
+                    error_log("Found applicant: " . json_encode($applicant));
                     $applicant_name = $applicant['firstname'] . ' ' . $applicant['lastname'];
                     $email = $applicant['email'];
-
-                    // Update the claim_status in users_info to 'Claimed' without resetting application_status
-                    $stmt = $pdo->prepare("UPDATE users_info SET claim_status = 'Claimed' WHERE user_id = ?");
-                    $stmt->execute([$user_id]);
-
-                    // Mark the token as used in claim_tokens
-                    $stmt = $pdo->prepare("UPDATE claim_tokens SET used = 1, used_at = NOW() WHERE user_id = ? AND used = 0 LIMIT 1");
-                    $stmt->execute([$user_id]);
 
                     // Send email to applicant confirming the claim
                     $mail = new PHPMailer(true);
@@ -112,9 +138,10 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
                         $mail->setFrom('ischobsit@gmail.com', 'Scholarship Admin');
                         $mail->addAddress($email, $applicant_name);
 
-                        // Attach the claim photo directly using the saved file path
+                        // Attach the claim photo
                         if (file_exists($file_name)) {
                             $mail->addAttachment($file_name, 'claim_photo.png');
+                            error_log("Attached claim photo to email");
                         }
 
                         $mail->isHTML(true);
@@ -139,14 +166,30 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
                         $mail->AltBody = "Dear $applicant_name,\n\nYour scholarship has been successfully claimed on " . date('Y-m-d H:i:s') . ".\nPlease find your claim photo attached to this email for your records.\n\nThank you for completing the claim process. If you have any questions, please contact us at ischobsit@gmail.com.\n\nBest regards,\niSCHO Admin Team";
 
                         $mail->send();
+                        error_log("Email sent successfully");
+                        
+                        // Commit the transaction only after email is sent successfully
+                        $pdo->commit();
+                        error_log("Transaction committed successfully");
                         $_SESSION['photo_success'] = "Photo uploaded successfully! Claim process completed.";
                     } catch (Exception $e) {
-                        $_SESSION['photo_error'] = "Photo saved successfully! Failed to send email: {$mail->ErrorInfo}";
+                        error_log("Email error: " . $e->getMessage());
+                        $pdo->rollBack();
+                        error_log("Transaction rolled back due to email error");
+                        $_SESSION['photo_error'] = "Failed to send email: {$mail->ErrorInfo}";
                     }
                 } else {
+                    error_log("Applicant not found for user_id: " . $user_id);
+                    $pdo->rollBack();
+                    error_log("Transaction rolled back - applicant not found");
                     $_SESSION['photo_error'] = "Applicant not found.";
                 }
             } catch (PDOException $e) {
+                error_log("Database error: " . $e->getMessage());
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                    error_log("Transaction rolled back due to database error");
+                }
                 $_SESSION['photo_error'] = "Error saving photo: " . $e->getMessage();
             }
 
@@ -550,7 +593,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['approve']) || isset($
                         $stmt->execute([$applicant_id, $token]);
 
                         // Generate QR code using phpqrcode
-                        $qrCodeUrl = "  https://32bf-2001-fd8-b812-d700-9d24-2fe6-269-a01b.ngrok-free.app/ischo2/verify_claim.php?token=" . urlencode($token);
+                        $qrCodeUrl = "  https://63da-2001-fd8-b812-d700-2423-abad-23bd-eb8c.ngrok-free.app/ischo2/verify_claim.php?token=" . urlencode($token);
                         $qrCodePath = 'qrcodes/' . $token . '.png';
                         if (!is_dir('qrcodes')) {
                             mkdir('qrcodes', 0777, true);
@@ -1739,63 +1782,60 @@ try {
                             <div id="detailed-info-<?php echo $applicant['id']; ?>" class="detailed-info" style="display: none;">
                                 <div class="info-section">
                                     <h4>Personal Information</h4>
-                                    <p><strong>Birthdate:</strong> <?php echo htmlspecialchars($applicant['birthdate'] ?: '-'); ?></p>
-                                    <p><strong>Gender:</strong> <?php echo htmlspecialchars($applicant['gender'] ?: '-'); ?></p>
-                                    <p><strong>Civil Status:</strong> <?php echo htmlspecialchars($applicant['civil_status'] ?: '-'); ?></p>
-                                    <p><strong>Place of Birth:</strong> <?php echo htmlspecialchars($applicant['place_of_birth'] ?: '-'); ?></p>
-                                    <p><strong>Degree:</strong> <?php echo htmlspecialchars($applicant['degree'] ?: '-'); ?></p>
-                                    <p><strong>Course:</strong> <?php echo htmlspecialchars($applicant['course'] ?: '-'); ?></p>
-                                    <p><strong>Current College:</strong> <?php echo htmlspecialchars($applicant['current_college'] ?: '-'); ?></p>
+                                    <div class="info-row"><strong>Birthdate:</strong> <span><?php echo htmlspecialchars($applicant['birthdate'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Gender:</strong> <span><?php echo htmlspecialchars($applicant['gender'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Civil Status:</strong> <span><?php echo htmlspecialchars($applicant['civil_status'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Place of Birth:</strong> <span><?php echo htmlspecialchars($applicant['place_of_birth'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Degree:</strong> <span><?php echo htmlspecialchars($applicant['degree'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Course:</strong> <span><?php echo htmlspecialchars($applicant['course'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Current College:</strong> <span><?php echo htmlspecialchars($applicant['current_college'] ?: '-'); ?></span></div>
                                 </div>
 
                                 <div class="info-section">
                                     <h4>Residency Information</h4>
-                                    <p><strong>Permanent Address:</strong> <?php echo htmlspecialchars($applicant['permanent_address'] ?: '-'); ?></p>
-                                    <p><strong>Municipality:</strong> <?php echo htmlspecialchars($applicant['municipality'] ?: '-'); ?></p>
-                                    <p><strong>Barangay:</strong> <?php echo htmlspecialchars($applicant['barangay'] ?: '-'); ?></p>
-                                    <p><strong>Residency Duration:</strong> <?php echo htmlspecialchars($applicant['residency_duration'] ?: '-'); ?></p>
-                                    <p><strong>Registered Voter:</strong> <?php echo htmlspecialchars($applicant['registered_voter'] ?: '-'); ?></p>
-                                    <p><strong>Father's Voting Duration:</strong> <?php echo htmlspecialchars($applicant['father_voting_duration'] ?: '-'); ?></p>
-                                    <p><strong>Mother's Voting Duration:</strong> <?php echo htmlspecialchars($applicant['mother_voting_duration'] ?: '-'); ?></p>
-                                    <p><strong>Applicant's Voting Duration:</strong> <?php echo htmlspecialchars($applicant['applicant_voting_duration'] ?: '-'); ?></p>
-                                    <p><strong>Guardian Name:</strong> <?php echo htmlspecialchars($applicant['guardian_name'] ?: '-'); ?></p>
-                                    <p><strong>Relationship:</strong> <?php echo htmlspecialchars($applicant['relationship'] ?: '-'); ?></p>
-                                    <p><strong>Guardian Address:</strong> <?php echo htmlspecialchars($applicant['guardian_address'] ?: '-'); ?></p>
-                                    <p><strong>Guardian Contact:</strong> <?php echo htmlspecialchars($applicant['guardian_contact'] ?: '-'); ?></p>
+                                    <div class="info-row"><strong>Permanent Address:</strong> <span><?php echo htmlspecialchars($applicant['permanent_address'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Municipality:</strong> <span><?php echo htmlspecialchars($applicant['municipality'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Barangay:</strong> <span><?php echo htmlspecialchars($applicant['barangay'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Residency Duration:</strong> <span><?php echo htmlspecialchars($applicant['residency_duration'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Registered Voter:</strong> <span><?php echo htmlspecialchars($applicant['registered_voter'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Father's Voting Duration:</strong> <span><?php echo htmlspecialchars($applicant['father_voting_duration'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Mother's Voting Duration:</strong> <span><?php echo htmlspecialchars($applicant['mother_voting_duration'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Applicant's Voting Duration:</strong> <span><?php echo htmlspecialchars($applicant['applicant_voting_duration'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Guardian Name:</strong> <span><?php echo htmlspecialchars($applicant['guardian_name'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Relationship:</strong> <span><?php echo htmlspecialchars($applicant['relationship'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Guardian Address:</strong> <span><?php echo htmlspecialchars($applicant['guardian_address'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Guardian Contact:</strong> <span><?php echo htmlspecialchars($applicant['guardian_contact'] ?: '-'); ?></span></div>
                                 </div>
 
                                 <div class="info-section">
                                     <h4>Family Background</h4>
                                     <div class="family-member">
                                         <h5>Father's Information</h5>
-                                        <p><strong>Name:</strong> <?php echo htmlspecialchars($applicant['father_name'] ?: '-'); ?></p>
-                                        <p><strong>Address:</strong> <?php echo htmlspecialchars($applicant['father_address'] ?: '-'); ?></p>
-                                        <p><strong>Contact:</strong> <?php echo htmlspecialchars($applicant['father_contact'] ?: '-'); ?></p>
-                                        <p><strong>Occupation:</strong> <?php echo htmlspecialchars($applicant['father_occupation'] ?: '-'); ?></p>
-                                        <p><strong>Office Address:</strong> <?php echo htmlspecialchars($applicant['father_office_address'] ?: '-'); ?></p>
-                                        <p><strong>Telephone No:</strong> <?php echo htmlspecialchars($applicant['father_tel_no'] ?: '-'); ?></p>
-                                        <p><strong>Age:</strong> <?php echo htmlspecialchars($applicant['father_age'] ?: '-'); ?></p>
-                                        <p><strong>Date of Birth:</strong> <?php echo htmlspecialchars($applicant['father_dob'] ?: '-'); ?></p>
-                                        <p><strong>Citizenship:</strong> <?php echo htmlspecialchars($applicant['father_citizenship'] ?: '-'); ?></p>
-                                        <p><strong>Religion:</strong> <?php echo htmlspecialchars($applicant['father_religion'] ?: '-'); ?></p>
+                                        <div class="info-row"><strong>Name:</strong> <span><?php echo htmlspecialchars($applicant['father_name'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Address:</strong> <span><?php echo htmlspecialchars($applicant['father_address'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Contact:</strong> <span><?php echo htmlspecialchars($applicant['father_contact'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Occupation:</strong> <span><?php echo htmlspecialchars($applicant['father_occupation'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Office Address:</strong> <span><?php echo htmlspecialchars($applicant['father_office_address'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Telephone No:</strong> <span><?php echo htmlspecialchars($applicant['father_tel_no'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Age:</strong> <span><?php echo htmlspecialchars($applicant['father_age'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Date of Birth:</strong> <span><?php echo htmlspecialchars($applicant['father_dob'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Citizenship:</strong> <span><?php echo htmlspecialchars($applicant['father_citizenship'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Religion:</strong> <span><?php echo htmlspecialchars($applicant['father_religion'] ?: '-'); ?></span></div>
                                     </div>
 
                                     <div class="family-member">
                                         <h5>Mother's Information</h5>
-                                        <p><strong>Name:</strong> <?php echo htmlspecialchars($applicant['mother_name'] ?: '-'); ?></p>
-                                        <p><strong>Address:</strong> <?php echo htmlspecialchars($applicant['mother_address'] ?: '-'); ?></p>
-                                        <p><strong>Contact:</strong> <?php echo htmlspecialchars($applicant['mother_contact'] ?: '-'); ?></p>
-                                        <p><strong>Occupation:</strong> <?php echo htmlspecialchars($applicant['mother_occupation'] ?: '-'); ?></p>
-                                        <p><strong>Office Address:</strong> <?php echo htmlspecialchars($applicant['mother_office_address'] ?: '-'); ?></p>
-                                        <p><strong>Telephone No:</strong> <?php echo htmlspecialchars($applicant['mother_tel_no'] ?: '-'); ?></p>
-                                        <p><strong>Age:</strong> <?php echo htmlspecialchars($applicant['mother_age'] ?: '-'); ?></p>
-                                        <p><strong>Date of Birth:</strong> <?php echo htmlspecialchars($applicant['mother_dob'] ?: '-'); ?></p>
-                                        <p><strong>Citizenship:</strong> <?php echo htmlspecialchars($applicant['mother_citizenship'] ?: '-'); ?></p>
-                                        <p><strong>Religion:</strong> <?php echo htmlspecialchars($applicant['mother_religion'] ?: '-'); ?></p>
-                                    </div>
-                                </div>
-
-                                <div class="info-section">
+                                        <div class="info-row"><strong>Name:</strong> <span><?php echo htmlspecialchars($applicant['mother_name'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Address:</strong> <span><?php echo htmlspecialchars($applicant['mother_address'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Contact:</strong> <span><?php echo htmlspecialchars($applicant['mother_contact'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Occupation:</strong> <span><?php echo htmlspecialchars($applicant['mother_occupation'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Office Address:</strong> <span><?php echo htmlspecialchars($applicant['mother_office_address'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Telephone No:</strong> <span><?php echo htmlspecialchars($applicant['mother_tel_no'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Age:</strong> <span><?php echo htmlspecialchars($applicant['mother_age'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Date of Birth:</strong> <span><?php echo htmlspecialchars($applicant['mother_dob'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Citizenship:</strong> <span><?php echo htmlspecialchars($applicant['mother_citizenship'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Religion:</strong> <span><?php echo htmlspecialchars($applicant['mother_religion'] ?: '-'); ?></span></div>
+                                        <div class="info-section">
                                     <h4>Documents</h4>
                                     <p><strong>Certificate of Registration:</strong> 
                                         <?php 
@@ -1818,6 +1858,7 @@ try {
                                             : '-'; 
                                         ?>
                                     </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
