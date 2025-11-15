@@ -6,6 +6,8 @@ use PHPMailer\PHPMailer\Exception;
 
 require 'vendor/autoload.php'; 
 require_once __DIR__ . '/vendor/phpqrcode/qrlib.php';
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/utils/encryption.php';
 
 if ($_SESSION['user_role'] !== 'Admin') {
     header('Location: login.php');
@@ -120,8 +122,18 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
                 $applicant = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($applicant) {
+                    // Decrypt applicant name fields before using
+                    try {
+                        $applicant['firstname'] = decrypt_from_db($applicant['firstname']);
+                    } catch (Exception $e) {
+                        // fallback to raw value
+                    }
+                    try {
+                        $applicant['lastname'] = decrypt_from_db($applicant['lastname']);
+                    } catch (Exception $e) {
+                    }
+                    $applicant_name = trim(($applicant['firstname'] ?? '') . ' ' . ($applicant['lastname'] ?? '')) ?: 'Applicant';
                     error_log("Found applicant: " . json_encode($applicant));
-                    $applicant_name = $applicant['firstname'] . ' ' . $applicant['lastname'];
                     $email = $applicant['email'];
 
                     // Send email to applicant confirming the claim
@@ -213,6 +225,12 @@ if (isset($_GET['view']) && $_GET['view'] === 'claiming_data') {
         ");
         $stmt->execute();
         $claimed_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // Decrypt names for display
+        foreach ($claimed_applicants as &$c) {
+            try { $c['firstname'] = decrypt_from_db($c['firstname']); } catch (Exception $e) {}
+            try { $c['lastname'] = decrypt_from_db($c['lastname']); } catch (Exception $e) {}
+            try { $c['middlename'] = decrypt_from_db($c['middlename']); } catch (Exception $e) {}
+        }
     } catch (PDOException $e) {
         $_SESSION['claiming_data_error'] = "Error fetching claimed applicants: " . $e->getMessage();
     }
@@ -380,8 +398,14 @@ try {
     $stmt = $pdo->prepare($query);
     $stmt->execute($params);
     $all_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
     foreach ($all_applicants as &$applicant) {
+        // Decrypt sensitive fields stored encrypted at rest
+        try { $applicant['firstname'] = decrypt_from_db($applicant['firstname']); } catch (Exception $e) {}
+        try { $applicant['lastname'] = decrypt_from_db($applicant['lastname']); } catch (Exception $e) {}
+        try { $applicant['middlename'] = decrypt_from_db($applicant['middlename']); } catch (Exception $e) {}
+        try { $applicant['municipality'] = isset($applicant['municipality']) ? decrypt_from_db($applicant['municipality']) : null; } catch (Exception $e) {}
+        try { $applicant['barangay'] = isset($applicant['barangay']) ? decrypt_from_db($applicant['barangay']) : null; } catch (Exception $e) {}
+        try { $applicant['place_of_birth'] = isset($applicant['place_of_birth']) ? decrypt_from_db($applicant['place_of_birth']) : null; } catch (Exception $e) {}
         $stmt = $pdo->prepare("
             SELECT 
                 cor_file_path, 

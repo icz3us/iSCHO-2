@@ -1,7 +1,9 @@
 <?php
 require './route_guard.php';
-require 'vendor/autoload.php'; 
+require_once __DIR__ . '/vendor/autoload.php'; 
 require 'philippine_locations.php';
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/utils/encryption.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -311,10 +313,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset
                                 firstname, lastname, middlename, contact_no, email, username, password, role
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ");
+                        // Encrypt sensitive personal fields before storing
+                        $enc_firstname = encrypt_for_db($pending_data['firstname']);
+                        $enc_lastname = encrypt_for_db($pending_data['lastname']);
+                        $enc_middlename = encrypt_for_db($pending_data['middlename']);
                         $stmt->execute([
-                            $pending_data['firstname'],
-                            $pending_data['lastname'],
-                            $pending_data['middlename'],
+                            $enc_firstname,
+                            $enc_lastname,
+                            $enc_middlename,
                             $pending_data['contact_no'],
                             $pending_data['email'],
                             $username,
@@ -330,14 +336,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset
                                 user_id, municipality, barangay, sex, civil_status, birthdate, place_of_birth
                             ) VALUES (?, ?, ?, ?, ?, ?, ?)
                         ");
+                        $enc_municipality = encrypt_for_db($pending_data['municipality']);
+                        $enc_barangay = encrypt_for_db($pending_data['barangay']);
+                        $enc_place_of_birth = encrypt_for_db($pending_data['place_of_birth']);
                         $stmt->execute([
                             $user_id,
-                            $pending_data['municipality'],
-                            $pending_data['barangay'],
+                            $enc_municipality,
+                            $enc_barangay,
                             $pending_data['sex'],
                             $pending_data['civil_status'],
                             $pending_data['birthdate'],
-                            $pending_data['place_of_birth']
+                            $enc_place_of_birth
                         ]);
                         error_log("Inserted into users_info table for user_id: $user_id");
 

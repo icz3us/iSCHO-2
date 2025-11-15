@@ -1,10 +1,24 @@
 <?php
 // More secure session configuration
+// Force HTTPS for non-localhost environments when not already HTTPS
+if (empty($_SERVER['HTTPS']) || $_SERVER['HTTPS'] === 'off') {
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host && stripos($host, 'localhost') === false && stripos($host, '127.0.0.1') === false) {
+        $https_url = 'https://' . $host . $_SERVER['REQUEST_URI'];
+        header('Location: ' . $https_url);
+        exit;
+    }
+}
+// HSTS header (only set when using HTTPS)
+if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
+
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
     'domain' => '',
-    'secure' => isset($_SERVER['HTTPS']), // Only use secure cookies over HTTPS
+    'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'), // Only use secure cookies over HTTPS
     'httponly' => true,
     'samesite' => 'Strict' // More secure than Lax
 ]);
