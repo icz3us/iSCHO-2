@@ -207,7 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_secret_key'])) 
 
                             $mail->isHTML(true);
                             $mail->Subject = $email_subject;
-                            $mail->Body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px;'><div style='background-color: #4f46e5; padding: 20px; text-align: center; border-top-left-radius: 8px; border-top-right-radius: 8px;'><h1 style='color: #ffffff; margin: 0; font-size: 24px;'>Scholarship Application Reset</h1></div><div style='padding: 30px; background-color: #ffffff;'><p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>Dear " . htmlspecialchars($applicant['firstname'] . ' ' . $applicant['lastname']) . ",</p><p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>The application period has been <span style='color: #4f46e5; font-weight: bold;'>reset</span>. You may now apply again for the scholarship.</p><p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>Please log in to your account to start your new application.</p><div style='text-align: center; margin: 30px 0;'><a href='  https://32bf-2001-fd8-b812-d700-9d24-2fe6-269-a01b.ngrok-free.app/ischo2/login.php' style='display: inline-block; background-color: #4f46e5; color: #fff; padding: 12px 32px; border-radius: 6px; font-size: 16px; text-decoration: none; font-weight: 600;'>Login to iSCHO</a></div><p style='color: #6b7280; font-size: 14px; margin-bottom: 0;'>If you have any questions, please contact us at <a href='mailto:ischobsit@gmail.com' style='color: #4f46e5; text-decoration: none;'>ischobsit@gmail.com</a>.</p></div><div style='background-color: #f9fafb; padding: 15px; text-align: center; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;'><p style='color: #6b7280; font-size: 12px; margin: 0;'>© 2025 iSCHO. All rights reserved.</p></div></div>";
+                            $mail->Body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px;'><div style='background-color: #4f46e5; padding: 20px; text-align: center; border-top-left-radius: 8px; border-top-right-radius: 8px;'><h1 style='color: #ffffff; margin: 0; font-size: 24px;'>Scholarship Application Reset</h1></div><div style='padding: 30px; background-color: #ffffff;'><p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>Dear " . htmlspecialchars($applicant['firstname'] . ' ' . $applicant['lastname']) . ",</p><p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>The application period has been <span style='color: #4f46e5; font-weight: bold;'>reset</span>. You may now apply again for the scholarship.</p><p style='color: #1f2937; font-size: 16px; margin-bottom: 15px;'>Please log in to your account to start your new application.</p><div style='text-align: center; margin: 30px 0;'><a href='  https://63da-2001-fd8-b812-d700-2423-abad-23bd-eb8c.ngrok-free.app/ischo2/login.php' style='display: inline-block; background-color: #4f46e5; color: #fff; padding: 12px 32px; border-radius: 6px; font-size: 16px; text-decoration: none; font-weight: 600;'>Login to iSCHO</a></div><p style='color: #6b7280; font-size: 14px; margin-bottom: 0;'>If you have any questions, please contact us at <a href='mailto:ischobsit@gmail.com' style='color: #4f46e5; text-decoration: none;'>ischobsit@gmail.com</a>.</p></div><div style='background-color: #f9fafb; padding: 15px; text-align: center; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;'><p style='color: #6b7280; font-size: 12px; margin: 0;'>© 2025 iSCHO. All rights reserved.</p></div></div>";
                             $mail->AltBody = "Dear " . $applicant['firstname'] . ' ' . $applicant['lastname'] . ",\n\nThe application period has been reset. You may now apply again for the scholarship. Please log in to your account to start your new application.\n\nBest regards,\niSCHO Admin Team";
                             $mail->send();
                         } catch (Exception $e) {
@@ -498,6 +498,123 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
     header('Location: superadmindashboard.php');
     exit;
 }
+
+// Handle post announcement
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['post_announcement'])) {
+    $message = trim($_POST['message']);
+    
+    if (!empty($message)) {
+        try {
+            // Handle image upload
+            $image_path = null;
+            if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
+                $upload_dir = 'uploads/announcements/';
+                if (!is_dir($upload_dir)) {
+                    mkdir($upload_dir, 0777, true);
+                }
+                
+                $file_extension = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
+                $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif'];
+                
+                if (in_array($file_extension, $allowed_extensions)) {
+                    $filename = uniqid() . '_' . time() . '.' . $file_extension;
+                    $target_file = $upload_dir . $filename;
+                    
+                    if (move_uploaded_file($_FILES['image']['tmp_name'], $target_file)) {
+                        $image_path = $target_file;
+                    }
+                }
+            }
+            
+            if ($image_path) {
+                $stmt = $pdo->prepare("INSERT INTO notices (user_id, message, image_path) VALUES (?, ?, ?)");
+                $stmt->execute([$_SESSION['user_id'], $message, $image_path]);
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO notices (user_id, message) VALUES (?, ?)");
+                $stmt->execute([$_SESSION['user_id'], $message]);
+            }
+            
+            $_SESSION['announcement_success'] = "Announcement posted successfully!";
+        } catch (PDOException $e) {
+            $_SESSION['announcement_error'] = "Failed to post announcement: " . $e->getMessage();
+        }
+    } else {
+        $_SESSION['announcement_error'] = "Announcement message cannot be empty.";
+    }
+    header('Location: superadmindashboard.php#announcements');
+    exit;
+}
+
+// Handle edit announcement
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_announcement'])) {
+    $announcement_id = trim($_POST['announcement_id']);
+    $message = trim($_POST['message']);
+    
+    if (!empty($message)) {
+        try {
+            // Handle image upload
+            $image_path = null;
+            if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
+                $upload_dir = 'uploads/announcements/';
+                if (!is_dir($upload_dir)) {
+                    mkdir($upload_dir, 0777, true);
+                }
+                
+                $file_extension = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
+                $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif'];
+                
+                if (in_array($file_extension, $allowed_extensions)) {
+                    $filename = uniqid() . '_' . time() . '.' . $file_extension;
+                    $target_file = $upload_dir . $filename;
+                    
+                    if (move_uploaded_file($_FILES['image']['tmp_name'], $target_file)) {
+                        $image_path = $target_file;
+                    }
+                }
+            }
+            
+            if ($image_path) {
+                $stmt = $pdo->prepare("UPDATE notices SET message = ?, image_path = ? WHERE id = ? AND user_id = ?");
+                $stmt->execute([$message, $image_path, $announcement_id, $_SESSION['user_id']]);
+            } else {
+                $stmt = $pdo->prepare("UPDATE notices SET message = ? WHERE id = ? AND user_id = ?");
+                $stmt->execute([$message, $announcement_id, $_SESSION['user_id']]);
+            }
+            
+            $_SESSION['announcement_success'] = "Announcement updated successfully!";
+        } catch (PDOException $e) {
+            $_SESSION['announcement_error'] = "Failed to update announcement: " . $e->getMessage();
+        }
+    } else {
+        $_SESSION['announcement_error'] = "Announcement message cannot be empty.";
+    }
+    header('Location: superadmindashboard.php#announcements');
+    exit;
+}
+
+// Handle delete announcement
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_announcement'])) {
+    $announcement_id = trim($_POST['announcement_id']);
+    
+    try {
+        $stmt = $pdo->prepare("DELETE FROM notices WHERE id = ? AND user_id = ?");
+        $stmt->execute([$announcement_id, $_SESSION['user_id']]);
+        $_SESSION['announcement_success'] = "Announcement deleted successfully!";
+    } catch (PDOException $e) {
+        $_SESSION['announcement_error'] = "Failed to delete announcement: " . $e->getMessage();
+    }
+    header('Location: superadmindashboard.php#announcements');
+    exit;
+}
+
+// Display success/error messages for announcements
+$announcement_success = isset($_SESSION['announcement_success']) ? $_SESSION['announcement_success'] : '';
+$announcement_error = isset($_SESSION['announcement_error']) ? $_SESSION['announcement_error'] : '';
+
+// Clear announcement messages
+unset($_SESSION['announcement_success']);
+unset($_SESSION['announcement_error']);
+
 ?>
 
 <!DOCTYPE html>
@@ -2066,6 +2183,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             </div>
             <ul>
                 <li><a href="#" id="dashboardLink" class="active" onclick="showDashboard()"><i class="fas fa-tachometer-alt"></i><span>Dashboard</span></a></li>
+                <li><a href="#" id="announcementsLink" onclick="showAnnouncements()"><i class="fas fa-bullhorn"></i><span>Announcements</span></a></li>
                 <li><a href="#" id="registerAdminLink" onclick="showRegisterAdmin()"><i class="fas fa-user-plus"></i><span>Register an Admin</span></a></li>
                 <li><a href="#" id="manageAdminsLink" onclick="showManageAdmins()"><i class="fas fa-users"></i><span>Manage Admins</span></a></li>
                 <li><a href="superadmindashboard.php?action=logout"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a></li>
@@ -2204,6 +2322,154 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                             </button>
                         </div>
                     </form>
+                </div>
+            </div>
+
+            <!-- Announcements Section -->
+            <div class="admin-form" id="announcementsSection" style="display: none;">
+                <div class="page-header">
+                    <h2><i class="fas fa-bullhorn"></i> Manage Announcements</h2>
+                    <p>Create, edit, and manage announcements for all users.</p>
+                </div>
+                
+                <!-- Display Success/Error Messages for Announcements -->
+                <?php if (!empty($announcement_success)): ?>
+                    <div class="success-message">
+                        <?php echo htmlspecialchars($announcement_success); ?>
+                    </div>
+                <?php endif; ?>
+                <?php if (!empty($announcement_error)): ?>
+                    <div class="error-message">
+                        <?php echo htmlspecialchars($announcement_error); ?>
+                    </div>
+                <?php endif; ?>
+                
+                <!-- Create New Announcement Form -->
+                <div class="form-section">
+                    <h3><i class="fas fa-plus-circle"></i> Post New Announcement</h3>
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="announcement_message"><i class="fas fa-comment"></i> Message <span class="required">*</span></label>
+                                <div class="input-group">
+                                    <i class="fas fa-comment"></i>
+                                    <textarea id="announcement_message" name="message" class="form-control textarea" required placeholder="Enter your announcement here..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="announcement_image"><i class="fas fa-image"></i> Image (Optional)</label>
+                                <div class="input-group">
+                                    <i class="fas fa-image"></i>
+                                    <input type="file" id="announcement_image" name="image" class="form-control" accept="image/*">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-buttons">
+                            <button type="submit" name="post_announcement" class="submit-btn">
+                                <i class="fas fa-paper-plane"></i>
+                                Post Announcement
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Existing Announcements -->
+                <div class="form-section">
+                    <h3><i class="fas fa-list"></i> Posted Announcements</h3>
+                    <?php 
+                    // Fetch all announcements posted by superadmin
+                    try {
+                        $stmt = $pdo->prepare("SELECT n.id, n.message, n.image_path, n.created_at, n.updated_at FROM notices n WHERE n.user_id = ? ORDER BY n.created_at DESC");
+                        $stmt->execute([$_SESSION['user_id']]);
+                        $announcements = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    } catch (PDOException $e) {
+                        $announcements = [];
+                        echo '<div class="error-message">Error fetching announcements: ' . $e->getMessage() . '</div>';
+                    }
+                    
+                    if (empty($announcements)):
+                    ?>
+                        <p>No announcements posted yet.</p>
+                    <?php else: ?>
+                        <div class="announcements-list">
+                            <?php foreach ($announcements as $announcement): ?>
+                                <div class="announcement-item">
+                                    <div class="announcement-header">
+                                        <div class="announcement-date">
+                                            Posted: <?php echo date('M d, Y \a\t g:i A', strtotime($announcement['created_at'])); ?>
+                                            <?php if ($announcement['updated_at'] != $announcement['created_at']): ?>
+                                                (Updated: <?php echo date('M d, Y \a\t g:i A', strtotime($announcement['updated_at'])); ?>)
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="announcement-actions">
+                                            <button class="edit-btn" onclick="showEditAnnouncementForm(<?php echo $announcement['id']; ?>)">
+                                                <i class="fas fa-edit"></i> Edit
+                                            </button>
+                                            <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this announcement?');">
+                                                <input type="hidden" name="announcement_id" value="<?php echo $announcement['id']; ?>">
+                                                <button type="submit" name="delete_announcement" class="delete-btn-table">
+                                                    <i class="fas fa-trash-alt"></i> Delete
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                    <div class="announcement-content">
+                                        <p><?php echo nl2br(htmlspecialchars($announcement['message'])); ?></p>
+                                    </div>
+                                    <?php if (!empty($announcement['image_path']) && file_exists($announcement['image_path'])): ?>
+                                        <div class="announcement-image" style="margin-top: 1rem;">
+                                            <img src="<?php echo htmlspecialchars($announcement['image_path']); ?>" alt="Announcement Image" style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer;" onclick="openImageModal('<?php echo htmlspecialchars($announcement['image_path']); ?>')">
+                                        </div>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Edit Announcement Form (Hidden by Default) -->
+                                    <div class="edit-announcement-form" id="edit-announcement-form-<?php echo $announcement['id']; ?>" style="display: none; margin-top: 1rem;">
+                                        <form method="POST" enctype="multipart/form-data">
+                                            <input type="hidden" name="announcement_id" value="<?php echo $announcement['id']; ?>">
+                                            <div class="form-row">
+                                                <div class="form-group">
+                                                    <label for="edit_message_<?php echo $announcement['id']; ?>"><i class="fas fa-comment"></i> Message <span class="required">*</span></label>
+                                                    <div class="input-group">
+                                                        <i class="fas fa-comment"></i>
+                                                        <textarea id="edit_message_<?php echo $announcement['id']; ?>" name="message" class="form-control textarea" required><?php echo htmlspecialchars($announcement['message']); ?></textarea>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="form-row">
+                                                <div class="form-group">
+                                                    <label for="edit_image_<?php echo $announcement['id']; ?>"><i class="fas fa-image"></i> Image (Optional)</label>
+                                                    <div class="input-group">
+                                                        <i class="fas fa-image"></i>
+                                                        <input type="file" id="edit_image_<?php echo $announcement['id']; ?>" name="image" class="form-control" accept="image/*">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <?php if (!empty($announcement['image_path']) && file_exists($announcement['image_path'])): ?>
+                                                <div class="form-row">
+                                                    <div class="form-group">
+                                                        <label><i class="fas fa-image"></i> Current Image</label>
+                                                        <div>
+                                                            <img src="<?php echo htmlspecialchars($announcement['image_path']); ?>" alt="Current Image" style="max-width: 200px; height: auto; border-radius: 8px;">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            <?php endif; ?>
+                                            <div class="form-buttons">
+                                                <button type="submit" name="edit_announcement" class="submit-btn">
+                                                    <i class="fas fa-save"></i> Update
+                                                </button>
+                                                <button type="button" class="cancel-btn" onclick="hideEditAnnouncementForm(<?php echo $announcement['id']; ?>)">
+                                                    <i class="fas fa-times"></i> Cancel
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -2577,6 +2843,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
             hideAllEditForms();
         }
 
+        function showAnnouncements() {
+            document.getElementById('dashboardContent').style.display = 'none';
+            document.getElementById('adminForm').style.display = 'none';
+            document.getElementById('manageAdmins').style.display = 'none';
+            document.getElementById('announcementsSection').style.display = 'block';
+            document.getElementById('dashboardLink').classList.remove('active');
+            document.getElementById('registerAdminLink').classList.remove('active');
+            document.getElementById('manageAdminsLink').classList.remove('active');
+            document.getElementById('announcementsLink').classList.add('active');
+            hideAllEditForms();
+        }
+
         function showEditForm(adminId, firstname, lastname, middlename, contact_no, email) {
             hideAllEditForms();
             document.getElementById('editAdminForm').style.display = 'block';
@@ -2715,6 +2993,206 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_admin'])) {
                 document.body.style.overflow = 'auto';
             }
         });
+
+        // Show edit announcement form
+        function showEditAnnouncementForm(announcementId) {
+            const form = document.getElementById('edit-announcement-form-' + announcementId);
+            if (form) {
+                form.style.display = 'block';
+            }
+        }
+
+        // Hide edit announcement form
+        function hideEditAnnouncementForm(announcementId) {
+            const form = document.getElementById('edit-announcement-form-' + announcementId);
+            if (form) {
+                form.style.display = 'none';
+            }
+        }
+    </script>
+    
+    <style>
+    /* Announcements Styles */
+    .announcements-list {
+        margin-top: 1.5rem;
+    }
+
+    .announcement-item {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        transition: all 0.3s ease;
+    }
+
+    .announcement-item:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        transform: translateY(-2px);
+    }
+
+    .announcement-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .announcement-date {
+        color: #64748b;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    .announcement-actions {
+        display: flex;
+        gap: 0.75rem;
+    }
+
+    .announcement-actions .edit-btn,
+    .announcement-actions .delete-btn-table {
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border: none;
+    }
+
+    .announcement-actions .edit-btn {
+        background: #dbeafe;
+        color: #2563eb;
+    }
+
+    .announcement-actions .edit-btn:hover {
+        background: #bfdbfe;
+    }
+
+    .announcement-actions .delete-btn-table {
+        background: #fee2e2;
+        color: #ef4444;
+    }
+
+    .announcement-actions .delete-btn-table:hover {
+        background: #fecaca;
+    }
+
+    .announcement-content {
+        color: #334155;
+        line-height: 1.6;
+        white-space: pre-wrap;
+    }
+
+    .announcement-content p {
+        margin: 0;
+    }
+
+    .announcement-image {
+        margin-top: 1rem;
+    }
+
+    .announcement-image img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+    }
+
+    /* Image Modal Styles */
+    .image-modal {
+        display: none;
+        position: fixed;
+        z-index: 10000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.9);
+        overflow: auto;
+    }
+    
+    .image-modal-content {
+        display: block;
+        margin: auto;
+        max-width: 90%;
+        max-height: 90%;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+    
+    .image-modal-close {
+        position: absolute;
+        top: 20px;
+        right: 35px;
+        color: #f1f1f1;
+        font-size: 40px;
+        font-weight: bold;
+        cursor: pointer;
+        z-index: 10001;
+    }
+    
+    .image-modal-close:hover {
+        color: #bbb;
+    }
+
+    .edit-announcement-form {
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .textarea {
+        min-height: 120px;
+        resize: vertical;
+    }
+
+    @media (max-width: 768px) {
+        .announcement-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .announcement-actions {
+            width: 100%;
+            justify-content: flex-end;
+        }
+    }
+    </style>
+    
+    <!-- Image Modal -->
+    <div id="imageModal" class="image-modal" onclick="closeImageModal(event)">
+        <span class="image-modal-close" onclick="closeImageModal(event)">&times;</span>
+        <img class="image-modal-content" id="modalImage">
+    </div>
+
+    <script>
+    function openImageModal(imageSrc) {
+        document.getElementById('imageModal').style.display = 'block';
+        document.getElementById('modalImage').src = imageSrc;
+        document.body.style.overflow = 'hidden';
+    }
+    
+    function closeImageModal(event) {
+        // Close only if clicking on the background or the close button
+        if (event.target.classList.contains('image-modal') || event.target.classList.contains('image-modal-close')) {
+            document.getElementById('imageModal').style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+    }
+    
+    // Close modal with ESC key
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape' && document.getElementById('imageModal').style.display === 'block') {
+            document.getElementById('imageModal').style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+    });
     </script>
 </body>
 </html>

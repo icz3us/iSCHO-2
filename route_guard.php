@@ -23,7 +23,6 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['user_role']) && isset($_SESS
     $jwt_key = 'b7e2c1f4a8d9e3f6c2b1a7e5d4c3f8b9e6a2c7d1f3b5e9a4c8d2f7b3e1a6c4d5';
     try {
         $decoded = JWT::decode($_SESSION['token'], new Key($jwt_key, 'HS256'));
-        // Optionally, you can check $decoded->sub == $_SESSION['user_id'] and $decoded->role == $_SESSION['user_role']
     } catch (Exception $e) {
             $_SESSION = array();
             session_destroy();
@@ -48,8 +47,8 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['user_role']) && isset($_SESS
     // echo "Session user_id, user_role, or token not set.<br>";
     $current_page = basename($_SERVER['PHP_SELF']);
     // echo "Current page in route_guard.php: " . $current_page . "<br>";
-    // Allow access to login.php, forgotpassword.php, and resetpassword.php
-    $allowed_pages = ['login.php', 'forgotpassword.php', 'resetpassword.php'];
+    // Allow access to login.php, forgotpassword.php, resetpassword.php, and announcements.php
+    $allowed_pages = ['login.php', 'forgotpassword.php', 'resetpassword.php', 'announcements.php'];
     if (!in_array($current_page, $allowed_pages)) {
         // echo "Redirecting to login.php.<br>";
         header('Location: login.php');

@@ -126,6 +126,7 @@
   </div>
   <div class="nav-links" id="nav-links">
     <a href="home.php">Home</a>
+    <a href="announcements.php">Announcements</a>
     <a href="about_us.php">About</a>
     <a href="procedure.php">Procedure</a>
     <a href="login.php">Login</a>

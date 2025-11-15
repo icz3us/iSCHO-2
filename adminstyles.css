@@ -1709,3 +1709,47 @@ tr:hover {
         font-weight: 500;
     }
 }
+
+.info-row {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.info-row strong {
+    min-width: 180px;
+    margin-right: 1rem;
+    color: #4a5568;
+}
+
+.info-row span {
+    flex: 1;
+    color: #1a202c;
+}
+
+.info-section {
+    background: #fff;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.info-section h4 {
+    color: #2d3748;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #4f46e5;
+}
+
+.family-member {
+    margin-bottom: 2rem;
+}
+
+.family-member h5 {
+    color: #4f46e5;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+}

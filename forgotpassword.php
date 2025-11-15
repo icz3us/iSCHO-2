@@ -33,7 +33,7 @@ function sendPasswordResetEmail($email, $token) {
         $mail->setFrom('ischobsit@gmail.com', 'ISCHO App');
         $mail->addAddress($email);
 
-        $reset_link = "  https://32bf-2001-fd8-b812-d700-9d24-2fe6-269-a01b.ngrok-free.app/ischo2/resetpassword.php?token=" . urlencode($token); // Updated URL
+        $reset_link = "  https://63da-2001-fd8-b812-d700-2423-abad-23bd-eb8c.ngrok-free.app/ischo2/resetpassword.php?token=" . urlencode($token); // Updated URL
 
         $mail->isHTML(true);
         $mail->Subject = "Password Reset Request for iSCHO";

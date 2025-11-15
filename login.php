@@ -14,6 +14,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 date_default_timezone_set('Asia/Manila'); 
 
+
 function generateOTP() {
     return str_pad(mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
 }
@@ -299,10 +300,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset
                         error_log("Transaction started successfully for email: $email");
 
                         $hashed_password = password_hash($pending_data['password'], PASSWORD_DEFAULT);
+                        // Generate a username based on email to avoid duplicate entry errors
+                        $username = $pending_data['email'];
+                        if (strpos($username, '@') !== false) {
+                            $username = substr($username, 0, strpos($username, '@'));
+                        }
+                        
                         $stmt = $pdo->prepare("
                             INSERT INTO users (
-                                firstname, lastname, middlename, contact_no, email, password, role
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                                firstname, lastname, middlename, contact_no, email, username, password, role
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ");
                         $stmt->execute([
                             $pending_data['firstname'],
@@ -310,6 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset
                             $pending_data['middlename'],
                             $pending_data['contact_no'],
                             $pending_data['email'],
+                            $username,
                             $hashed_password,
                             'Applicant'
                         ]);
