@@ -2347,7 +2347,7 @@ unset($_SESSION['announcement_error']);
                 <!-- Create New Announcement Form -->
                 <div class="form-section">
                     <h3><i class="fas fa-plus-circle"></i> Post New Announcement</h3>
-                    <form method="POST" enctype="multipart/form-data">
+                    <form id="postAnnouncementForm" enctype="multipart/form-data" onsubmit="postAnnouncementAJAX(this)">
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="announcement_message"><i class="fas fa-comment"></i> Message <span class="required">*</span></label>
@@ -3193,6 +3193,159 @@ unset($_SESSION['announcement_error']);
             document.body.style.overflow = 'auto';
         }
     });
+    
+    // Initialize real-time updates
+    initializeSuperAdminRealTimeUpdates();
+    </script>
+    
+    <script>
+    // Real-time update functions for superadmin dashboard
+    function initializeSuperAdminRealTimeUpdates() {
+        // Update notices every 60 seconds
+        setInterval(updateSuperAdminNotices, 60000);
+        
+        // Update application stats every 60 seconds
+        setInterval(updateApplicationStats, 60000);
+    }
+    
+    function updateSuperAdminNotices() {
+        fetch('ajax_superadmin_updates.php?action=get_notices')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update notices in the announcements section if it exists
+                    const noticesContainer = document.querySelector('.announcements-list');
+                    if (noticesContainer) {
+                        if (data.notices.length === 0) {
+                            noticesContainer.innerHTML = '<p>No announcements posted yet.</p>';
+                        } else {
+                            let noticesHTML = '';
+                            data.notices.forEach(notice => {
+                                noticesHTML += `
+                                    <div class="announcement-item">
+                                        <div class="announcement-header">
+                                            <div class="announcement-date">
+                                                Posted: ${formatDate(notice.created_at)}
+                                                ${notice.updated_at !== notice.created_at ? `(Updated: ${formatDate(notice.updated_at)})` : ''}
+                                            </div>
+                                            <div class="announcement-actions">
+                                                <button class="edit-btn" onclick="showEditAnnouncementForm(${notice.id})">
+                                                    <i class="fas fa-edit"></i> Edit
+                                                </button>
+                                                <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this announcement?');">
+                                                    <input type="hidden" name="announcement_id" value="${notice.id}">
+                                                    <button type="submit" name="delete_announcement" class="delete-btn-table">
+                                                        <i class="fas fa-trash-alt"></i> Delete
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                        <div class="announcement-content">
+                                            <p>${escapeHtml(notice.message)}</p>
+                                        </div>
+                                        ${notice.image_path ? `
+                                            <div class="announcement-image" style="margin-top: 1rem;">
+                                                <img src="${escapeHtml(notice.image_path)}" alt="Announcement Image" style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer;" onclick="openImageModal('${escapeHtml(notice.image_path)}')">
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            });
+                            noticesContainer.innerHTML = noticesHTML;
+                        }
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error updating superadmin notices:', error);
+            });
+    }
+    
+    function updateApplicationStats() {
+        fetch('ajax_superadmin_updates.php?action=get_application_stats')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update stats if they exist on the page
+                    const totalElement = document.querySelector('.stat-card.total .stat-value');
+                    const approvedElement = document.querySelector('.stat-card.approved .stat-value');
+                    const deniedElement = document.querySelector('.stat-card.denied .stat-value');
+                    const pendingElement = document.querySelector('.stat-card.pending .stat-value');
+                    
+                    if (totalElement) totalElement.textContent = data.stats.total;
+                    if (approvedElement) approvedElement.textContent = data.stats.approved;
+                    if (deniedElement) deniedElement.textContent = data.stats.denied;
+                    if (pendingElement) pendingElement.textContent = data.stats.pending;
+                }
+            })
+            .catch(error => {
+                console.error('Error updating application stats:', error);
+            });
+    }
+    
+    // Helper functions
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        
+        return text.replace(/[&<>'"]/g, function(m) { return map[m]; });
+    }
+    
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // AJAX function to post announcement
+    function postAnnouncementAJAX(formElement) {
+        // Prevent default form submission
+        event.preventDefault();
+        
+        // Get form data
+        const formData = new FormData(formElement);
+        
+        // Show loading indicator
+        const submitButton = formElement.querySelector('button[type="submit"]');
+        const originalText = submitButton.innerHTML;
+        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Posting...';
+        submitButton.disabled = true;
+        
+        // Send AJAX request
+        fetch('ajax_superadmin_updates.php?action=post_announcement', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show success message
+                alert(data.message);
+                
+                // Clear the form
+                formElement.reset();
+                
+                // Trigger real-time update
+                updateSuperAdminNotices();
+            } else {
+                // Show error message
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while posting the announcement. Please try again.');
+        })
+        .finally(() => {
+            // Restore button state
+            submitButton.innerHTML = originalText;
+            submitButton.disabled = false;
+        });
+    }
     </script>
 </body>
 </html>

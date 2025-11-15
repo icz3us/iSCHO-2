@@ -95,6 +95,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 2rem;
+            margin-top: 2rem;
         }
 
         .team-member {
@@ -312,20 +313,32 @@
                 <div class="info-icon">
                     <i class="fas fa-envelope"></i>
                 </div>
-                <h3>Contact Us</h3>
-                <a href="mailto:ischobsit@gmail.com">ischobsit@gmail.com</a>
+                <h3>Contact Us, Edukalinga</h3>
+                <a href="mailto:edukalinga@gmail.com">edukalinga@gmail.com</a>
             </div>
+        </div>
+        
+        <!-- Sponsor Section -->
+        <div class="team-member">
+            <h3>Our Sponsor</h3>
+            <div class="avatar">
+                <img src="./images/khonghun.jpg" alt="Edukalinga Logo">
+            </div>
+            <h3>Edukalinga by Cong. Khonghun</h3>
+            <p>
+            Edukalinga is a scholarship program initiated by Hon. Khonghun aimed at providing educational support to deserving students in the region. The program is committed to empowering the youth through education and creating opportunities for academic excellence.
+            </p>
         </div>
 
         <div class="team-grid">
-            <!-- Batac, Alan Michael -->
+            <!-- Lacuesta, Hans Marcus Roberto V. -->
             <div class="team-member">
                 <div class="avatar">
-                    <img src="./images/batac.png" alt="Batac, Alan Michael">
+                    <img src="./images/lacuesta.jpg" alt="Batac, Alan Michael">
                 </div>
-                <h3>Batac, Alan Michael</h3>
+                <h3>Lacuesta, Hans Marcus Roberto V.</h3>
                 <p>
-                I am Alan Michael Batac, a passionate Information Technology student and aspiring software developer. I believe in the power of technology to create efficient, user-centered systems that solve everyday problems. With iSCHO, I aspire to contribute to digital transformation in educational institutions by simplifying scholarship management and improving communication between students and administrators.
+                I am Lacuesta, Hans Marcus Roberto V., a passionate Information Technology student and aspiring software developer. I believe in the power of technology to create efficient, user-centered systems that solve everyday problems. With iSCHO, I aspire to contribute to digital transformation in educational institutions by simplifying scholarship management and improving communication between students and administrators.
                 </p>
             </div>
 

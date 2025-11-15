@@ -267,6 +267,90 @@ try {
             document.body.style.overflow = 'auto';
         }
     });
+    
+    // Initialize real-time updates for announcements
+    function initializeRealTimeUpdates() {
+        // Update announcements every 10 seconds for testing
+        setInterval(updateAnnouncements, 10000);
+    }
+    
+    // Update announcements function
+    function updateAnnouncements() {
+        console.log('Fetching announcements...');
+        fetch('ajax_public_updates.php?action=get_announcements')
+            .then(response => {
+                console.log('Announcements response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Announcements data received:', data);
+                if (data.success) {
+                    const container = document.querySelector('.announcements-container');
+                    if (container) {
+                        if (data.announcements.length === 0) {
+                            container.innerHTML = `
+                                <div class="empty-announcements">
+                                    <p>No announcements available at the moment.</p>
+                                </div>
+                            `;
+                        } else {
+                            let announcementsHTML = '';
+                            data.announcements.forEach(announcement => {
+                                announcementsHTML += `
+                                    <div class="announcement-item">
+                                        <div class="announcement-header">
+                                            <div class="announcement-author">
+                                                <strong>${escapeHtml(announcement.firstname + ' ' + announcement.lastname)}</strong>
+                                            </div>
+                                            <div class="announcement-date">
+                                                ${formatDate(announcement.created_at)}
+                                            </div>
+                                        </div>
+                                        <div class="announcement-content">
+                                            ${escapeHtml(announcement.message).replace(/\n/g, '<br>')}
+                                        </div>
+                                        ${announcement.image_path ? `
+                                            <div class="announcement-image" style="margin-top: 1rem;">
+                                                <img src="${escapeHtml(announcement.image_path)}" alt="Announcement Image" style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer;" onclick="openImageModal('${escapeHtml(announcement.image_path)}')">
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            });
+                            container.innerHTML = announcementsHTML;
+                        }
+                    }
+                } else {
+                    console.error('Failed to fetch announcements:', data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating announcements:', error);
+            });
+    }
+    
+    // Helper functions
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        
+        return text.replace(/[&<>'"]/g, function(m) { return map[m]; });
+    }
+    
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // Start real-time updates when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeRealTimeUpdates();
+    });
     </script>
 </body>
 </html>

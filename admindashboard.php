@@ -1,11 +1,13 @@
 <?php
 require './route_guard.php';
+require 'vendor/autoload.php';
+require './cache/CacheManager.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-require 'vendor/autoload.php'; 
-require_once __DIR__ . '/vendor/phpqrcode/qrlib.php';
+// Initialize cache manager
+$cache = new CacheManager('./cache/');
 
 if ($_SESSION['user_role'] !== 'Admin') {
     header('Location: login.php');
@@ -255,26 +257,44 @@ $denied_applicants = 0;
 $under_review_applicants = 0;
 
 try {
-    // Count total applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'Applicant'");
-    $stmt->execute();
-    $total_applicants = $stmt->fetchColumn();
+    // Check cache first for statistics
+    $cacheKey = "admin_stats_" . $_SESSION['user_id'];
+    $cachedStats = $cache->get($cacheKey);
+    
+    if ($cachedStats) {
+        // Use cached data
+        $total_applicants = $cachedStats['total_applicants'];
+        $approved_applicants = $cachedStats['approved_applicants'];
+        $denied_applicants = $cachedStats['denied_applicants'];
+        $under_review_applicants = $cachedStats['under_review_applicants'];
+    } else {
+        // Fetch from database
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'Applicant'");
+        $stmt->execute();
+        $total_applicants = $stmt->fetchColumn();
 
-    // Count approved applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Approved'");
-    $stmt->execute();
-    $approved_applicants = $stmt->fetchColumn();
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Approved'");
+        $stmt->execute();
+        $approved_applicants = $stmt->fetchColumn();
 
-    // Count denied applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Denied'");
-    $stmt->execute();
-    $denied_applicants = $stmt->fetchColumn();
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Denied'");
+        $stmt->execute();
+        $denied_applicants = $stmt->fetchColumn();
 
-    // Count under review applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Under Review'");
-    $stmt->execute();
-    $under_review_applicants = $stmt->fetchColumn();
-
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Under Review'");
+        $stmt->execute();
+        $under_review_applicants = $stmt->fetchColumn();
+        
+        // Cache the results for 5 minutes
+        $statsData = [
+            'total_applicants' => $total_applicants,
+            'approved_applicants' => $approved_applicants,
+            'denied_applicants' => $denied_applicants,
+            'under_review_applicants' => $under_review_applicants
+        ];
+        $cache->set($cacheKey, $statsData, 300);
+    }
+    
 } catch (PDOException $e) {
     error_log("Error: " . $e->getMessage());
 }
@@ -308,7 +328,46 @@ try {
     $_SESSION['analytics_error'] = "Error fetching gender analytics: " . $e->getMessage();
 }
 
+// Pagination for applicants list
+$limit = 50; // Number of applicants per page
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$offset = ($page - 1) * $limit;
+
 $all_applicants = [];
+$total_applicants_count = 0;
+
+try {
+    // Get total count first
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) 
+        FROM users u
+        LEFT JOIN users_info ui ON u.id = ui.user_id
+        WHERE u.role = 'Applicant'
+    ");
+    $stmt->execute();
+    $total_applicants_count = $stmt->fetchColumn();
+    
+    // Fetch paginated applicants
+    $stmt = $pdo->prepare("
+        SELECT u.id, u.firstname, u.lastname, u.middlename, u.contact_no, u.email,
+               ui.application_status, ui.claim_status, ui.municipality
+        FROM users u
+        LEFT JOIN users_info ui ON u.id = ui.user_id
+        WHERE u.role = 'Applicant'
+        ORDER BY u.created_at DESC
+        LIMIT :limit OFFSET :offset
+    ");
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $stmt->execute();
+    $all_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Error fetching applicants: " . $e->getMessage());
+}
+
+// Calculate total pages
+$total_pages = ceil($total_applicants_count / $limit);
+
 $search_query = isset($_GET['search']) ? trim($_GET['search']) : '';
 
 try {
@@ -1574,22 +1633,22 @@ try {
                 }
                 ?>
                 <div class="stats">
-                    <div class="stat-card total-applicants" onclick="openStatsModal('total-modal')">
+                    <div class="stat-card total-applicants" data-modal="total-modal">
                         <i class="fas fa-users icon"></i>
                         <h3><?php echo $total_applicants; ?></h3>
                         <p>Total Applicants</p>
                     </div>
-                    <div class="stat-card under-review" onclick="openStatsModal('under-review-modal')">
+                    <div class="stat-card under-review" data-modal="under-review-modal">
                         <i class="fas fa-clock icon"></i>
                         <h3><?php echo $under_review_applicants; ?></h3>
                         <p>Pending</p>
                     </div>
-                    <div class="stat-card approved" onclick="openStatsModal('approved-modal')">
+                    <div class="stat-card approved" data-modal="approved-modal">
                         <i class="fas fa-check-circle icon"></i>
                         <h3><?php echo $approved_applicants; ?></h3>
                         <p>Approved Applicants</p>
                     </div>
-                    <div class="stat-card denied" onclick="openStatsModal('denied-modal')">
+                    <div class="stat-card denied" data-modal="denied-modal">
                         <i class="fas fa-times-circle icon"></i>
                         <h3><?php echo $denied_applicants; ?></h3>
                         <p>Denied Applicants</p>
@@ -1656,7 +1715,7 @@ try {
                                             <td><?php echo htmlspecialchars($applicant['claim_status'] ?: 'Not Claimed'); ?></td>
                                             <td>
                                                 <div class="action-buttons">
-                                                    <button class="details-btn" onclick="openModal('modal-<?php echo $applicant['id']; ?>')">View Details</button>
+                                                    <button class="details-btn" data-modal="modal-<?php echo $applicant['id']; ?>">View Details</button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -1755,7 +1814,7 @@ try {
             <?php foreach ($all_applicants as $applicant): ?>
                 <div class="modal" id="modal-<?php echo $applicant['id']; ?>">
                     <div class="modal-content">
-                        <span class="close-btn" onclick="closeModal('modal-<?php echo $applicant['id']; ?>')">×</span>
+                        <span class="close-btn" data-modal="modal-<?php echo $applicant['id']; ?>">×</span>
                         <h3>Applicant Details</h3>
                         <div class="applicant-details">
                             <?php if (!empty($applicant['documents']['profile_picture'])): ?>
@@ -1913,7 +1972,7 @@ try {
                         <!-- Send Notice Form (Hidden by Default) -->
                         <div class="form-section" id="noticeForm-<?php echo $applicant['id']; ?>">
                             <h3>Send Notice to <?php echo htmlspecialchars($applicant['firstname'] . ' ' . $applicant['lastname']); ?></h3>
-                            <form method="POST" action="admindashboard.php?view=all<?php echo !empty($search_query) ? '&search=' . urlencode($search_query) : ''; ?>">
+                            <form id="noticeForm-<?php echo $applicant['id']; ?>-form" onsubmit="sendNoticeAJAX(this)">
                                 <input type="hidden" name="applicant_id" value="<?php echo $applicant['id']; ?>">
                                 <div class="form-row">
                                     <div class="form-group">
@@ -2013,7 +2072,7 @@ try {
     <!-- Stats Modals -->
     <div id="total-modal" class="modal stats-modal">
         <div class="modal-content">
-            <span class="close-btn" onclick="closeModal('total-modal')">×</span>
+            <span class="close-btn" data-modal="total-modal">×</span>
             <h3>Total Applicants</h3>
             <div class="table-container">
                 <table>
@@ -2042,7 +2101,7 @@ try {
 
     <div id="approved-modal" class="modal stats-modal">
         <div class="modal-content">
-            <span class="close-btn" onclick="closeModal('approved-modal')">×</span>
+            <span class="close-btn" data-modal="approved-modal">×</span>
             <h3>Approved Applicants</h3>
             <div class="table-container">
                 <table>
@@ -2072,7 +2131,7 @@ try {
 
     <div id="denied-modal" class="modal stats-modal">
         <div class="modal-content">
-            <span class="close-btn" onclick="closeModal('denied-modal')">×</span>
+            <span class="close-btn" data-modal="denied-modal">×</span>
             <h3>Denied Applicants</h3>
             <div class="table-container">
                 <table>
@@ -2103,7 +2162,7 @@ try {
     <!-- Add Under Review Modal -->
     <div id="under-review-modal" class="modal stats-modal">
         <div class="modal-content">
-            <span class="close-btn" onclick="closeModal('under-review-modal')">×</span>
+            <span class="close-btn" data-modal="under-review-modal">×</span>
             <h3>Pending Applicants</h3>
             <div class="table-container">
                 <table>
@@ -2490,14 +2549,49 @@ try {
         });
 
         function openModal(modalId) {
+            console.log('Opening modal:', modalId);
             const modal = document.getElementById(modalId);
             if (modal) {
                 modal.style.display = 'block';
                 document.body.style.overflow = 'hidden';
+            } else {
+                console.error('Modal not found:', modalId);
             }
         }
 
+        // Add debugging to the View Details buttons
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add click handlers for View Details buttons
+            const viewDetailsButtons = document.querySelectorAll('.details-btn');
+            viewDetailsButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    console.log('View Details button clicked:', this);
+                    const modalId = this.getAttribute('data-modal');
+                    if (modalId) {
+                        openModal(modalId);
+                    }
+                });
+            });
+            
+            // Add click handlers for close buttons
+            const closeButtons = document.querySelectorAll('.close-btn');
+            closeButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    console.log('Close button clicked:', this);
+                    const modalId = this.getAttribute('data-modal');
+                    if (modalId) {
+                        if (this.closest('.stats-modal')) {
+                            closeStatsModal(modalId);
+                        } else {
+                            closeModal(modalId);
+                        }
+                    }
+                });
+            });
+        });
+
         function closeModal(modalId) {
+            console.log('Closing modal:', modalId);
             const modal = document.getElementById(modalId);
             if (modal) {
                 modal.style.display = 'none';
@@ -2505,6 +2599,19 @@ try {
                 
                 const forms = modal.querySelectorAll('.form-section');
                 forms.forEach(form => form.style.display = 'none');
+            } else {
+                console.error('Modal not found:', modalId);
+            }
+        }
+
+        function closeStatsModal(modalId) {
+            console.log('Closing stats modal:', modalId);
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = 'auto';
+            } else {
+                console.error('Stats modal not found:', modalId);
             }
         }
 
@@ -2600,6 +2707,56 @@ try {
                 form.submit();
             }
         }
+        
+        // AJAX function to send notice
+        function sendNoticeAJAX(formElement) {
+            // Prevent default form submission
+            event.preventDefault();
+            
+            // Get form data
+            const formData = new FormData(formElement);
+            
+            // Show loading indicator
+            const submitButton = formElement.querySelector('button[type="submit"]');
+            const originalText = submitButton.innerHTML;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+            submitButton.disabled = true;
+            
+            // Send AJAX request
+            fetch('ajax_admin_updates.php?action=send_notice', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show success message
+                    alert(data.message);
+                    
+                    // Hide the form
+                    const formId = formElement.id;
+                    hideNoticeForm(formId);
+                    
+                    // Clear the form
+                    formElement.reset();
+                    
+                    // Trigger real-time update
+                    updateAdminNotices();
+                } else {
+                    // Show error message
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while sending the notice. Please try again.');
+            })
+            .finally(() => {
+                // Restore button state
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
+            });
+        }
 
         
         function showLoadingModal() {
@@ -2622,11 +2779,12 @@ try {
             document.querySelectorAll('.modal').forEach(function(modal) {
                 modal.addEventListener('mousedown', function(e) {
                     if (e.target === modal) {
-                        modal.classList.remove('active');
-                        setTimeout(() => {
-                            modal.style.display = 'none';
-                            document.body.style.overflow = 'auto';
-                        }, 300);
+                        // Don't close stats modals with this handler
+                        if (modal.classList.contains('stats-modal')) {
+                            closeStatsModal(modal.id);
+                        } else {
+                            closeModal(modal.id);
+                        }
                     }
                 });
             });
@@ -2910,28 +3068,38 @@ try {
 
         // Add these functions
         function openStatsModal(modalType) {
+            console.log('Opening stats modal:', modalType);
             const modal = document.getElementById(modalType);
             if (modal) {
                 modal.style.display = 'block';
                 document.body.style.overflow = 'hidden';
+            } else {
+                console.error('Stats modal not found:', modalType);
             }
         }
 
-        function closeStatsModal(modalId) {
-            const modal = document.getElementById(modalId);
-            if (modal) {
-                modal.style.display = 'none';
-                document.body.style.overflow = 'auto';
-            }
-        }
+        // Add debugging to the stats card click handlers
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add click handlers for stats cards
+            const statCards = document.querySelectorAll('.stat-card');
+            statCards.forEach(card => {
+                card.addEventListener('click', function(e) {
+                    console.log('Stat card clicked:', this);
+                    const modalId = this.getAttribute('data-modal');
+                    if (modalId) {
+                        openStatsModal(modalId);
+                    }
+                });
+            });
+        });
 
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
-                document.body.style.overflow = 'auto';
-            }
-        }
+        // Close modal when clicking outside - REMOVED to prevent conflicts
+        // window.onclick = function(event) {
+        //     if (event.target.classList.contains('modal')) {
+        //         event.target.style.display = 'none';
+        //         document.body.style.overflow = 'auto';
+        //     }
+        // }
 
         function showSuccessModal() {
             const modal = document.getElementById('success-modal');
@@ -3316,6 +3484,88 @@ try {
                 closeDocumentModal();
             }
         });
+        
+        // Initialize real-time updates
+        initializeAdminRealTimeUpdates();
+    </script>
+    
+    <script>
+    // Real-time update functions for admin dashboard
+    function initializeAdminRealTimeUpdates() {
+        // Update notices every 60 seconds
+        setInterval(updateAdminNotices, 60000);
+    }
+    
+    function updateAdminNotices() {
+        fetch('ajax_admin_updates.php?action=get_notices')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update notices in the announcements section if it exists
+                    const noticesContainer = document.querySelector('.announcements-list');
+                    if (noticesContainer) {
+                        if (data.notices.length === 0) {
+                            noticesContainer.innerHTML = '<p>No announcements posted yet.</p>';
+                        } else {
+                            let noticesHTML = '';
+                            data.notices.forEach(notice => {
+                                noticesHTML += `
+                                    <div class="announcement-item">
+                                        <div class="announcement-header">
+                                            <div class="announcement-date">
+                                                Posted: ${formatDate(notice.created_at)}
+                                                ${notice.updated_at !== notice.created_at ? `(Updated: ${formatDate(notice.updated_at)})` : ''}
+                                            </div>
+                                            <div class="announcement-actions">
+                                                <button class="edit-btn" onclick="showEditAnnouncementForm(${notice.id})">
+                                                    <i class="fas fa-edit"></i> Edit
+                                                </button>
+                                                <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this announcement?');">
+                                                    <input type="hidden" name="announcement_id" value="${notice.id}">
+                                                    <button type="submit" name="delete_announcement" class="delete-btn-table">
+                                                        <i class="fas fa-trash-alt"></i> Delete
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                        <div class="announcement-content">
+                                            <p>${escapeHtml(notice.message)}</p>
+                                        </div>
+                                        ${notice.image_path ? `
+                                            <div class="announcement-image" style="margin-top: 1rem;">
+                                                <img src="${escapeHtml(notice.image_path)}" alt="Announcement Image" style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer;" onclick="openImageModal('${escapeHtml(notice.image_path)}')">
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            });
+                            noticesContainer.innerHTML = noticesHTML;
+                        }
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error updating admin notices:', error);
+            });
+    }
+    
+    // Helper functions
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        
+        return text.replace(/[&<>'"]/g, function(m) { return map[m]; });
+    }
+    
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
     </script>
 </body>
 </html>
