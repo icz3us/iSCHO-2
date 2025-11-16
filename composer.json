@@ -1,6 +1,14 @@
 {
     "require": {
         "phpmailer/phpmailer": "^6.10",
-        "firebase/php-jwt": "^6.11"
+        "firebase/php-jwt": "^6.11",
+        "gemini-api-php/client": "^1.7",
+        "symfony/http-client": "^7.3",
+        "nyholm/psr7": "^1.8"
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
     }
 }
