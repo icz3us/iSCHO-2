@@ -1461,6 +1461,317 @@ try {
             font-size: 1.25rem;
         }
     }
+
+    /* ============= OCR STYLES ============= */
+    
+    .ocr-modal {
+        display: none !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 2000;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    .ocr-modal.show {
+        display: flex !important;
+    }
+
+    .ocr-modal-content {
+        background-color: #ffffff;
+        padding: 2rem;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 800px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        animation: modalSlideIn 0.3s ease-out;
+        position: relative;
+    }
+
+    @keyframes modalSlideIn {
+        from {
+            opacity: 0;
+            transform: scale(0.9);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    .ocr-modal-content h3 {
+        color: #1f2937;
+        margin-bottom: 1.5rem;
+        margin-top: 0;
+        font-size: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-right: 2rem;
+    }
+
+    .ocr-modal-content .close-btn {
+        position: absolute;
+        top: 1.5rem;
+        right: 1.5rem;
+        background: none;
+        border: none;
+        font-size: 1.8rem;
+        color: #6b7280;
+        cursor: pointer;
+        transition: color 0.2s ease;
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .ocr-modal-content .close-btn:hover {
+        color: #1f2937;
+    }
+
+    .ocr-container {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .ocr-controls {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+    }
+
+    .ocr-btn {
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        color: white;
+        border: none;
+        padding: 0.875rem 1.75rem;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    }
+
+    .ocr-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
+    }
+
+    .ocr-btn:active {
+        transform: translateY(0);
+    }
+
+    .ocr-quick-btn {
+        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+    }
+
+    .ocr-quick-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+    }
+
+    .spinner {
+        border: 4px solid #e5e7eb;
+        border-top: 4px solid #4f46e5;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 1rem;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .ocr-result-section,
+    .ocr-stats-section,
+    .ocr-info-section {
+        background: #f9fafb;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+    }
+
+    .ocr-result-section h4,
+    .ocr-stats-section h4,
+    .ocr-info-section h4 {
+        color: #1f2937;
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .ocr-text-container {
+        background: white;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .ocr-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .stat {
+        background: white;
+        padding: 1rem;
+        border-radius: 6px;
+        border-left: 4px solid #4f46e5;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .stat .label {
+        font-weight: 500;
+        color: #6b7280;
+        font-size: 0.9rem;
+    }
+
+    .stat .value {
+        font-weight: 600;
+        color: #1f2937;
+        font-size: 1.1rem;
+    }
+
+    .ocr-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+    }
+
+    .action-btn {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.95rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .accept-btn {
+        background: #10b981;
+        color: white;
+    }
+
+    .accept-btn:hover {
+        background: #059669;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .retry-btn {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .retry-btn:hover {
+        background: #2563eb;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+
+    .reject-btn {
+        background: #ef4444;
+        color: white;
+    }
+
+    .reject-btn:hover {
+        background: #dc2626;
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    }
+
+    .ocr-modal-content::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .ocr-modal-content::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+
+    .ocr-modal-content::-webkit-scrollbar-thumb {
+        background: #4f46e5;
+        border-radius: 4px;
+    }
+
+    .ocr-modal-content::-webkit-scrollbar-thumb:hover {
+        background: #4338ca;
+    }
+
+    @media (max-width: 768px) {
+        .ocr-modal-content {
+            width: 95%;
+            max-width: 100%;
+            padding: 1.5rem;
+        }
+
+        .ocr-stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .ocr-actions {
+            flex-direction: column;
+        }
+
+        .action-btn {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .ocr-modal-content {
+            padding: 1rem;
+        }
+
+        .ocr-stats-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .ocr-modal-content h3 {
+            font-size: 1.2rem;
+        }
+    }
     </style>
 </head>
 <body>
@@ -2146,7 +2457,12 @@ try {
     <div id="documentModal" class="modal document-modal">
         <div class="modal-content document-modal-content">
             <span class="close-btn" onclick="closeDocumentModal()">&times;</span>
-            <h3 id="documentTitle">Document Preview</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h3 id="documentTitle" style="margin:0;">Document Preview</h3>
+                <button class="ocr-quick-btn" onclick="openOCRForCurrentDocument()" title="Extract text from this document using OCR">
+                    <i class="fas fa-microchip"></i> Extract Text
+                </button>
+            </div>
             <div class="document-container">
                 <div class="pdf-toolbar">
                     <div class="pdf-controls">
@@ -2169,6 +2485,52 @@ try {
         </div>
     </div>
 
+    <!-- OCR Text Extraction Modal -->
+    <div id="ocrModal" class="ocr-modal">
+        <div class="ocr-modal-content">
+            <span class="close-btn" onclick="closeOCRModal()">&times;</span>
+            <h3>Document Text Extraction (OCR)</h3>
+            <div class="ocr-container">
+                <div class="ocr-controls">
+                    <button id="ocr-start-btn" class="ocr-btn" onclick="startOCRExtraction()">
+                        <i class="fas fa-microchip"></i> Extract Text with OCR
+                    </button>
+                    <div id="ocr-loading" style="display:none; text-align:center;">
+                        <div class="spinner"></div>
+                        <p id="ocr-loading-text">Processing document...</p>
+                        <small id="ocr-loading-note" style="color:#6b7280; margin-top:10px; display:none;">This may take a minute on first use</small>
+                    </div>
+                </div>
+                
+                <div id="ocr-results" style="display:none;">
+                    <div class="ocr-result-section">
+                        <div class="ocr-text-container">
+                            <textarea id="ocr-extracted-text" readonly style="width:100%; height:350px; padding:10px; border:1px solid #ddd; border-radius:6px; font-family:'Courier New', monospace;"></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="ocr-actions">
+                        <button class="action-btn accept-btn" onclick="acceptOCRResults()" title="Accept and save these results">
+                            <i class="fas fa-check"></i> Accept & Save
+                        </button>
+                        <button class="action-btn retry-btn" onclick="retryOCRExtraction()" title="Try extracting text again">
+                            <i class="fas fa-redo"></i> Retry
+                        </button>
+                        <button class="action-btn reject-btn" onclick="rejectOCRResults()" title="Discard these results">
+                            <i class="fas fa-times"></i> Discard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // Set PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             
@@ -3264,6 +3626,10 @@ try {
             const viewer = document.getElementById('documentViewer');
             const docTitle = document.getElementById('documentTitle');
             
+            // Store original document URL for OCR processing
+            currentOCRData.originalDocumentUrl = documentUrl;
+            currentOCRData.documentTitle = title;
+            
             docTitle.textContent = title;
             viewer.src = documentUrl;
             document.getElementById('zoomLevel').value = '100';
@@ -3314,6 +3680,537 @@ try {
             const modal = document.getElementById('documentModal');
             if (event.target === modal) {
                 closeDocumentModal();
+            }
+        });
+
+        // ============= OCR FUNCTIONALITY =============
+        
+        let currentOCRData = {
+            userId: null,
+            documentType: null,
+            documentUrl: null,
+            imageData: null
+        };
+
+        let ocrWorker = null;
+
+        /**
+         * Initialize Tesseract Worker
+         */
+        async function initializeTesseractWorker() {
+            if (!ocrWorker) {
+                try {
+                    const { createWorker } = Tesseract;
+                    ocrWorker = await createWorker();
+                    console.log('Tesseract worker initialized');
+                } catch (error) {
+                    console.error('Failed to initialize Tesseract:', error);
+                    showOCRError('Failed to initialize OCR engine. Please refresh the page.');
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /**
+         * Open OCR modal for current document
+         */
+        function openOCRForCurrentDocument() {
+            const documentTitle = document.getElementById('documentTitle');
+            const documentViewer = document.getElementById('documentViewer');
+            
+            // Use original document URL if available, otherwise fall back to iframe src
+            let documentUrl = currentOCRData.originalDocumentUrl || documentViewer?.src;
+            
+            console.log('openOCRForCurrentDocument called', {
+                titleExists: !!documentTitle,
+                viewerExists: !!documentViewer,
+                originalUrl: currentOCRData.originalDocumentUrl,
+                viewerSrc: documentViewer?.src,
+                finalUrl: documentUrl,
+                isPDF: documentUrl?.toLowerCase().includes('.pdf')
+            });
+            
+            if (!documentUrl) {
+                alert('No document loaded. Please view a document first.');
+                console.error('Document URL not found');
+                return;
+            }
+            
+            currentOCRData.documentUrl = documentUrl;
+            console.log('Document URL set to OCR:', currentOCRData.documentUrl);
+            
+            openOCRModal();
+        }
+
+        /**
+         * Open OCR Modal
+         */
+        function openOCRModal() {
+            const modal = document.getElementById('ocrModal');
+            if (modal) {
+                modal.classList.add('show');
+                document.body.style.overflow = 'hidden';
+                
+                // Reset OCR results - Show button, hide everything else
+                const startBtn = document.getElementById('ocr-start-btn');
+                const resultsDiv = document.getElementById('ocr-results');
+                const loadingDiv = document.getElementById('ocr-loading');
+                
+                if (startBtn) startBtn.style.display = 'block';
+                if (resultsDiv) resultsDiv.style.display = 'none';
+                if (loadingDiv) loadingDiv.style.display = 'none';
+            }
+        }
+
+        /**
+         * Close OCR Modal
+         */
+        function closeOCRModal() {
+            const modal = document.getElementById('ocrModal');
+            if (modal) {
+                modal.classList.remove('show');
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        /**
+         * Start OCR text extraction
+         */
+        async function startOCRExtraction() {
+            const startBtn = document.getElementById('ocr-start-btn');
+            const loadingDiv = document.getElementById('ocr-loading');
+            const resultsDiv = document.getElementById('ocr-results');
+            
+            console.log('startOCRExtraction called', {
+                documentUrl: currentOCRData.documentUrl,
+                startBtnExists: !!startBtn,
+                loadingExists: !!loadingDiv,
+                resultsExists: !!resultsDiv,
+                tesseractLoaded: typeof Tesseract !== 'undefined'
+            });
+            
+            // Check if Tesseract is loaded
+            if (typeof Tesseract === 'undefined') {
+                showOCRError('OCR library not loaded. Please refresh the page and try again.');
+                console.error('Tesseract library is not available');
+                return;
+            }
+            
+            if (!currentOCRData.documentUrl) {
+                showOCRError('No document URL available. Please open a document first.');
+                return;
+            }
+            
+            try {
+                // Hide button and show loading
+                if (startBtn) {
+                    startBtn.style.display = 'none';
+                    startBtn.removeAttribute('disabled');
+                }
+                if (loadingDiv) {
+                    loadingDiv.style.display = 'block';
+                    const loadingText = document.getElementById('ocr-loading-text');
+                    const loadingNote = document.getElementById('ocr-loading-note');
+                    
+                    // Update loading message based on document type
+                    if (currentOCRData.documentUrl.toLowerCase().includes('.pdf')) {
+                        if (loadingText) loadingText.textContent = 'Converting PDF to image...';
+                        if (loadingNote) loadingNote.style.display = 'block';
+                    } else {
+                        if (loadingText) loadingText.textContent = 'Extracting text from document...';
+                        if (loadingNote) loadingNote.style.display = 'none';
+                    }
+                }
+                if (resultsDiv) {
+                    resultsDiv.style.display = 'none';
+                }
+                
+                console.log('UI state updated to loading');
+                
+                // Initialize Tesseract
+                const initialized = await initializeTesseractWorker();
+                if (!initialized) {
+                    throw new Error('Tesseract initialization failed. Check console for details.');
+                }
+                
+                console.log('Tesseract initialized');
+                
+                // Convert document to image
+                console.log('Converting document to image from URL:', currentOCRData.documentUrl.substring(0, 100));
+                const imageData = await getDocumentAsImage(currentOCRData.documentUrl);
+                
+                if (!imageData) {
+                    throw new Error('Failed to convert document to image. The document may not be accessible.');
+                }
+                
+                console.log('Image data retrieved, length:', imageData.length);
+                
+                const startTime = performance.now();
+                
+                // Perform OCR
+                console.log('Starting OCR recognition...');
+                const result = await ocrWorker.recognize(imageData);
+                
+                const endTime = performance.now();
+                const processingTime = Math.round(endTime - startTime);
+                
+                console.log('OCR recognition complete', { time: processingTime, resultExists: !!result });
+                
+                if (!result || !result.data) {
+                    throw new Error('OCR returned invalid result');
+                }
+                
+                // Extract text and confidence
+                const extractedText = result.data.text || '';
+                const confidence = (result.data.confidence || 0) / 100; // Convert to decimal
+                
+                console.log('Extracted text length:', extractedText.length, 'Confidence:', confidence);
+                
+                if (!extractedText || extractedText.trim().length === 0) {
+                    showOCRWarning('No text could be extracted from the document. Try a clearer image.');
+                }
+                
+                // Validate extraction
+                const validation = validateOCRExtraction(extractedText, confidence);
+                
+                if (!validation.isValid) {
+                    showOCRWarning('Low quality extraction detected. Results may be inaccurate.');
+                }
+                
+                // Display results
+                displayOCRResults(extractedText, confidence, processingTime, validation);
+                
+                // Update UI
+                if (loadingDiv) {
+                    loadingDiv.style.display = 'none';
+                }
+                if (resultsDiv) {
+                    resultsDiv.style.display = 'block';
+                }
+                
+                console.log('OCR extraction complete', {
+                    text: extractedText.substring(0, 100) + '...',
+                    confidence: confidence,
+                    time: processingTime
+                });
+                
+            } catch (error) {
+                console.error('OCR Error:', error);
+                console.error('Error stack:', error.stack);
+                showOCRError('Error during text extraction: ' + error.message);
+                
+                // Reset UI on error
+                if (loadingDiv) {
+                    loadingDiv.style.display = 'none';
+                }
+                if (startBtn) {
+                    startBtn.style.display = 'block';
+                }
+                if (resultsDiv) {
+                    resultsDiv.style.display = 'none';
+                }
+            }
+        }
+
+        /**
+         * Convert document URL to image data
+         */
+        async function getDocumentAsImage(url) {
+            console.log('getDocumentAsImage called with URL:', url);
+            
+            return new Promise((resolve) => {
+                try {
+                    // If it's already a data URL or blob, use it directly
+                    if (url.includes('data:') || url.startsWith('blob:')) {
+                        console.log('URL is data or blob, using directly');
+                        resolve(url);
+                        return;
+                    }
+                    
+                    // Check if it's a PDF - more robust detection
+                    const lowerUrl = url.toLowerCase();
+                    const isPDF = lowerUrl.includes('.pdf') || 
+                                  lowerUrl.includes('pdf?') || 
+                                  lowerUrl.endsWith('pdf') ||
+                                  url.includes('application/pdf');
+                    
+                    console.log('PDF detection result:', {
+                        url: url,
+                        isPDF: isPDF,
+                        lowerUrl: lowerUrl
+                    });
+                    
+                    if (isPDF) {
+                        console.log('PDF detected, rendering to image...');
+                        convertPDFToImage(url).then(resolve).catch(error => {
+                            console.error('Error converting PDF:', error);
+                            resolve(null);
+                        });
+                        return;
+                    }
+                    
+                    // For iframe or other URLs, fetch and convert
+                    console.log('Fetching document from URL');
+                    fetch(url, {
+                        headers: {
+                            'Accept': 'image/*,application/pdf'
+                        }
+                    })
+                        .then(response => {
+                            console.log('Fetch response status:', response.status, 'content-type:', response.headers.get('content-type'));
+                            if (!response.ok) {
+                                throw new Error('Failed to fetch: ' + response.status + ' ' + response.statusText);
+                            }
+                            
+                            // Check if response is PDF
+                            const contentType = response.headers.get('content-type');
+                            if (contentType && contentType.includes('pdf')) {
+                                return response.blob().then(blob => {
+                                    const blobUrl = URL.createObjectURL(blob);
+                                    return convertPDFToImage(blobUrl).catch(e => {
+                                        console.error('Error converting fetched PDF:', e);
+                                        return null;
+                                    });
+                                });
+                            }
+                            return response.blob();
+                        })
+                        .then(result => {
+                            // If result is already a data URL from PDF conversion
+                            if (typeof result === 'string' && result.startsWith('data:')) {
+                                console.log('Resolved data URL from PDF conversion');
+                                resolve(result);
+                                return;
+                            }
+                            
+                            // Otherwise process as blob
+                            const blob = result;
+                            console.log('Blob received, size:', blob.size, 'type:', blob.type);
+                            
+                            if (blob.size === 0) {
+                                throw new Error('Empty blob received');
+                            }
+                            
+                            const reader = new FileReader();
+                            reader.onerror = () => {
+                                console.error('FileReader error:', reader.error);
+                                resolve(null);
+                            };
+                            reader.onloadend = () => {
+                                console.log('FileReader complete, result length:', reader.result.length);
+                                resolve(reader.result);
+                            };
+                            reader.readAsDataURL(blob);
+                        })
+                        .catch(error => {
+                            console.error('Error in fetch/conversion chain:', error.message);
+                            resolve(null);
+                        });
+                } catch (error) {
+                    console.error('Error in getDocumentAsImage try block:', error);
+                    resolve(null);
+                }
+            });
+        }
+        
+        /**
+         * Convert PDF to image using PDF.js
+         */
+        async function convertPDFToImage(pdfUrl) {
+            console.log('convertPDFToImage called with URL:', pdfUrl);
+            
+            try {
+                // Check if PDF.js is loaded
+                if (typeof pdfjsLib === 'undefined') {
+                    throw new Error('PDF.js library not loaded. Please refresh the page.');
+                }
+                
+                // Load the PDF document
+                const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+                console.log('PDF loaded, pages:', pdf.numPages);
+                
+                // Get first page
+                const page = await pdf.getPage(1);
+                const viewport = page.getViewport({ scale: 2 }); // 2x scale for better quality
+                
+                // Create canvas
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                
+                const context = canvas.getContext('2d');
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                // Render page to canvas
+                await page.render(renderContext).promise;
+                console.log('PDF page rendered to canvas');
+                
+                // Convert canvas to data URL
+                const imageData = canvas.toDataURL('image/png');
+                console.log('Canvas converted to data URL, length:', imageData.length);
+                
+                return imageData;
+            } catch (error) {
+                console.error('Error in convertPDFToImage:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Validate OCR extraction quality
+         */
+        function validateOCRExtraction(text, confidence) {
+            const textLength = text.trim().length;
+            const wordCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+            const hasNumbers = /\d/.test(text);
+            const hasLetters = /[a-zA-Z]/.test(text);
+            
+            let qualityScore = 0;
+            
+            if (textLength > 20) qualityScore += 20;
+            if (wordCount > 3) qualityScore += 20;
+            if (hasLetters) qualityScore += 20;
+            if (hasNumbers) qualityScore += 15;
+            if (confidence > 0.7) qualityScore += 25;
+            
+            const isValid = qualityScore >= 50;
+            
+            return {
+                isValid: isValid,
+                qualityScore: Math.min(qualityScore, 100),
+                textLength: textLength,
+                wordCount: wordCount,
+                hasNumbers: hasNumbers,
+                hasLetters: hasLetters,
+                confidence: confidence
+            };
+        }
+
+        /**
+         * Display OCR results in modal
+         */
+        function displayOCRResults(text, confidence, processingTime, validation) {
+            document.getElementById('ocr-extracted-text').value = text;
+            // Store metadata for saving later (but don't display it)
+            currentOCRData.confidence = confidence;
+            currentOCRData.processingTime = processingTime;
+        }
+
+
+        /**
+         * Accept and save OCR results
+         */
+        async function acceptOCRResults() {
+            const extractedText = document.getElementById('ocr-extracted-text').value;
+            const confidence = currentOCRData.confidence || 0;
+            const processingTime = currentOCRData.processingTime || 0;
+            
+            if (!extractedText.trim()) {
+                alert('No text to save');
+                return;
+            }
+            
+            try {
+                const response = await fetch('ajax_ocr_handler.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: new URLSearchParams({
+                        action: 'extract_text',
+                        user_id: currentOCRData.userId || '<?php echo $_SESSION['user_id']; ?>',
+                        document_type: currentOCRData.documentType || 'document',
+                        extracted_text: extractedText,
+                        confidence: confidence,
+                        processing_time: processingTime
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showOCRSuccess('Text extraction saved successfully!');
+                    setTimeout(() => {
+                        closeOCRModal();
+                    }, 2000);
+                } else {
+                    showOCRError('Failed to save results: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                showOCRError('Error saving OCR results: ' + error.message);
+            }
+        }
+
+        /**
+         * Retry OCR extraction
+         */
+        async function retryOCRExtraction() {
+            await startOCRExtraction();
+        }
+
+        /**
+         * Reject OCR results
+         */
+        function rejectOCRResults() {
+            const resultsDiv = document.getElementById('ocr-results');
+            const startBtn = document.getElementById('ocr-start-btn');
+            
+            resultsDiv.style.display = 'none';
+            startBtn.style.display = 'block';
+            
+            // Clear results
+            document.getElementById('ocr-extracted-text').value = '';
+        }
+
+        /**
+         * Show OCR error message
+         */
+        function showOCRError(message) {
+            const resultsDiv = document.getElementById('ocr-results');
+            const startBtn = document.getElementById('ocr-start-btn');
+            const loadingDiv = document.getElementById('ocr-loading');
+            const infoDiv = document.getElementById('ocr-detected-info');
+            
+            console.log('showOCRError called with message:', message);
+            
+            if (resultsDiv) resultsDiv.style.display = 'block';
+            if (startBtn) startBtn.style.display = 'block';
+            if (loadingDiv) loadingDiv.style.display = 'none';
+            
+            if (infoDiv) {
+                infoDiv.innerHTML = '<div style="color: #dc2626; padding: 10px; background: #fee2e2; border-radius: 6px; border-left: 4px solid #dc2626;"><strong>⚠️ Error:</strong> ' + message + '</div>';
+            }
+        }
+
+        /**
+         * Show OCR warning message
+         */
+        function showOCRWarning(message) {
+            const infoDiv = document.getElementById('ocr-detected-info');
+            const existingHTML = infoDiv.innerHTML;
+            infoDiv.innerHTML = '<div style="color: #d97706; padding: 10px; background: #fef3c7; border-radius: 6px; margin-bottom: 10px;"><strong>Warning:</strong> ' + message + '</div>' + existingHTML;
+        }
+
+        /**
+         * Show OCR success message
+         */
+        function showOCRSuccess(message) {
+            alert(message);
+        }
+
+        // Clean up OCR worker when page unloads
+        window.addEventListener('beforeunload', async function() {
+            if (ocrWorker) {
+                try {
+                    await ocrWorker.terminate();
+                } catch (e) {
+                    console.error('Error terminating worker:', e);
+                }
             }
         });
     </script>
