@@ -198,3 +198,16 @@ VALUES (1, 'Super', 'Admin', '', '09123456789', 'admin@ischo.com', '$2y$10$92IXU
 
 -- Insert sample application period (optional)
 INSERT IGNORE INTO application_period (application_deadline) VALUES ('2025-12-31');
+
+-- Analytics data table for predictive analytics
+CREATE TABLE IF NOT EXISTS analytics_data (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    metric_name VARCHAR(100) NOT NULL,
+    metric_value DECIMAL(10,2) DEFAULT NULL,
+    category VARCHAR(100) DEFAULT NULL,
+    period DATE DEFAULT NULL,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_metric_name (metric_name),
+    INDEX idx_category (category),
+    INDEX idx_period (period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -2186,6 +2186,7 @@ unset($_SESSION['announcement_error']);
                 <li><a href="#" id="announcementsLink" onclick="showAnnouncements()"><i class="fas fa-bullhorn"></i><span>Announcements</span></a></li>
                 <li><a href="#" id="registerAdminLink" onclick="showRegisterAdmin()"><i class="fas fa-user-plus"></i><span>Register an Admin</span></a></li>
                 <li><a href="#" id="manageAdminsLink" onclick="showManageAdmins()"><i class="fas fa-users"></i><span>Manage Admins</span></a></li>
+                <li><a href="#" id="analyticsLink" onclick="showAnalytics()"><i class="fas fa-chart-line"></i><span>Analytics</span></a></li>
                 <li><a href="superadmindashboard.php?action=logout"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a></li>
             </ul>
         </div>
@@ -2669,6 +2670,47 @@ unset($_SESSION['announcement_error']);
         </div>
     </div>
 
+    <!-- Analytics Section -->
+    <div class="admin-form" id="analyticsSection" style="display: none;">
+        <div class="page-header">
+            <h2><i class="fas fa-chart-line"></i> Predictive Analytics</h2>
+            <p>Forecast scholarship trends and applicant success rates</p>
+        </div>
+        
+        <div class="form-section">
+            <h3><i class="fas fa-chart-bar"></i> Scholarship Trends Analysis</h3>
+            <div id="trends-loading" class="loading-message" style="display: none;">
+                <i class="fas fa-spinner fa-spin"></i> Analyzing scholarship trends...
+            </div>
+            <div id="trends-results" class="analytics-results"></div>
+            <button id="analyze-trends-btn" class="submit-btn" onclick="analyzeScholarshipTrends()">
+                <i class="fas fa-search"></i> Analyze Trends
+            </button>
+        </div>
+        
+        <div class="form-section">
+            <h3><i class="fas fa-user-graduate"></i> Applicant Success Predictions</h3>
+            <div id="predictions-loading" class="loading-message" style="display: none;">
+                <i class="fas fa-spinner fa-spin"></i> Predicting applicant success rates...
+            </div>
+            <div id="predictions-results" class="analytics-results"></div>
+            <button id="predict-applicants-btn" class="submit-btn" onclick="predictApplicantSuccess()">
+                <i class="fas fa-brain"></i> Predict Success Rates
+            </button>
+        </div>
+        
+        <div class="form-section">
+            <h3><i class="fas fa-lightbulb"></i> Recommendations</h3>
+            <div id="recommendations-loading" class="loading-message" style="display: none;">
+                <i class="fas fa-spinner fa-spin"></i> Generating recommendations...
+            </div>
+            <div id="recommendations-results" class="analytics-results"></div>
+            <button id="generate-recommendations-btn" class="submit-btn" onclick="generateRecommendations()">
+                <i class="fas fa-cogs"></i> Generate Recommendations
+            </button>
+        </div>
+    </div>
+
     <!-- Secret Key Verification Popup -->
     <div class="secret-key-popup" id="secretKeyPopup" <?php echo (isset($_SESSION['show_secret_key_popup']) && $_SESSION['show_secret_key_popup']) ? 'style="display: flex;"' : ''; ?>>
         <div class="secret-key-container">
@@ -2817,9 +2859,13 @@ unset($_SESSION['announcement_error']);
             document.getElementById('dashboardContent').style.display = 'block';
             document.getElementById('adminForm').style.display = 'none';
             document.getElementById('manageAdmins').style.display = 'none';
+            document.getElementById('announcementsSection').style.display = 'none';
+            document.getElementById('analyticsSection').style.display = 'none';
             document.getElementById('dashboardLink').classList.add('active');
             document.getElementById('registerAdminLink').classList.remove('active');
             document.getElementById('manageAdminsLink').classList.remove('active');
+            document.getElementById('announcementsLink').classList.remove('active');
+            document.getElementById('analyticsLink').classList.remove('active');
             hideAllEditForms();
         }
 
@@ -2827,9 +2873,13 @@ unset($_SESSION['announcement_error']);
             document.getElementById('dashboardContent').style.display = 'none';
             document.getElementById('adminForm').style.display = 'block';
             document.getElementById('manageAdmins').style.display = 'none';
+            document.getElementById('announcementsSection').style.display = 'none';
+            document.getElementById('analyticsSection').style.display = 'none';
             document.getElementById('dashboardLink').classList.remove('active');
             document.getElementById('registerAdminLink').classList.add('active');
             document.getElementById('manageAdminsLink').classList.remove('active');
+            document.getElementById('announcementsLink').classList.remove('active');
+            document.getElementById('analyticsLink').classList.remove('active');
             hideAllEditForms();
         }
 
@@ -2837,9 +2887,13 @@ unset($_SESSION['announcement_error']);
             document.getElementById('dashboardContent').style.display = 'none';
             document.getElementById('adminForm').style.display = 'none';
             document.getElementById('manageAdmins').style.display = 'block';
+            document.getElementById('announcementsSection').style.display = 'none';
+            document.getElementById('analyticsSection').style.display = 'none';
             document.getElementById('dashboardLink').classList.remove('active');
             document.getElementById('registerAdminLink').classList.remove('active');
             document.getElementById('manageAdminsLink').classList.add('active');
+            document.getElementById('announcementsLink').classList.remove('active');
+            document.getElementById('analyticsLink').classList.remove('active');
             hideAllEditForms();
         }
 
@@ -2848,10 +2902,12 @@ unset($_SESSION['announcement_error']);
             document.getElementById('adminForm').style.display = 'none';
             document.getElementById('manageAdmins').style.display = 'none';
             document.getElementById('announcementsSection').style.display = 'block';
+            document.getElementById('analyticsSection').style.display = 'none';
             document.getElementById('dashboardLink').classList.remove('active');
             document.getElementById('registerAdminLink').classList.remove('active');
             document.getElementById('manageAdminsLink').classList.remove('active');
             document.getElementById('announcementsLink').classList.add('active');
+            document.getElementById('analyticsLink').classList.remove('active');
             hideAllEditForms();
         }
 
@@ -3009,6 +3065,190 @@ unset($_SESSION['announcement_error']);
                 form.style.display = 'none';
             }
         }
+
+        // Show analytics section
+        function showAnalytics() {
+            document.getElementById('dashboardContent').style.display = 'none';
+            document.getElementById('adminForm').style.display = 'none';
+            document.getElementById('manageAdmins').style.display = 'none';
+            document.getElementById('announcementsSection').style.display = 'none';
+            document.getElementById('analyticsSection').style.display = 'block';
+            document.getElementById('dashboardLink').classList.remove('active');
+            document.getElementById('registerAdminLink').classList.remove('active');
+            document.getElementById('manageAdminsLink').classList.remove('active');
+            document.getElementById('announcementsLink').classList.remove('active');
+            document.getElementById('analyticsLink').classList.add('active');
+            hideAllEditForms();
+        }
+
+        // Analyze scholarship trends
+        function analyzeScholarshipTrends() {
+            const loadingElement = document.getElementById('trends-loading');
+            const resultsElement = document.getElementById('trends-results');
+            const button = document.getElementById('analyze-trends-btn');
+            
+            loadingElement.style.display = 'block';
+            resultsElement.innerHTML = '';
+            button.disabled = true;
+            
+            fetch('ajax_analytics_handler.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'action=get_scholarship_trends'
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingElement.style.display = 'none';
+                button.disabled = false;
+                
+                if (data.success) {
+                    let html = '<div class="analytics-results-content">';
+                    html += '<h4>Scholarship Trends by Municipality</h4>';
+                    html += '<div class="trends-grid">';
+                    
+                    for (const municipality in data.data) {
+                        const stats = data.data[municipality];
+                        html += `
+                            <div class="trend-card">
+                                <div class="trend-card-header">
+                                    <h5 class="trend-card-title">${municipality}</h5>
+                                </div>
+                                <div class="trend-stats">
+                                    <p>Total Applicants: <strong>${stats.total_applicants}</strong></p>
+                                    <p>Approved: <strong>${stats.total_approved}</strong></p>
+                                    <p>Approval Rate: <strong>${stats.approval_rate}%</strong></p>
+                                    <p>Trend: <strong class="trend-${stats.growth_trend}">${stats.growth_trend.charAt(0).toUpperCase() + stats.growth_trend.slice(1)}</strong></p>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    html += '</div>';
+                    html += `<p class="analysis-date">Analysis generated on: ${data.generated_at}</p>`;
+                    html += '</div>';
+                    resultsElement.innerHTML = html;
+                } else {
+                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                loadingElement.style.display = 'none';
+                button.disabled = false;
+                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message}</div>`;
+            });
+        }
+
+        // Predict applicant success
+        function predictApplicantSuccess() {
+            const loadingElement = document.getElementById('predictions-loading');
+            const resultsElement = document.getElementById('predictions-results');
+            const button = document.getElementById('predict-applicants-btn');
+            
+            loadingElement.style.display = 'block';
+            resultsElement.innerHTML = '';
+            button.disabled = true;
+            
+            fetch('ajax_analytics_handler.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'action=get_applicant_predictions'
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingElement.style.display = 'none';
+                button.disabled = false;
+                
+                if (data.success) {
+                    let html = '<div class="analytics-results-content">';
+                    html += `<h4>Overall Success Rate: <span class="success-rate">${data.overall_success_rate}%</span></h4>`;
+                    html += `<p>Total Applicants: <strong>${data.total_applicants}</strong> | Approved: <strong>${data.approved_applicants}</strong></p>`;
+                    
+                    // Success factors by category
+                    for (const factor in data.success_factors) {
+                        html += `<h5>${factor.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} Success Rates</h5>`;
+                        html += '<div class="factors-grid">';
+                        
+                        for (const key in data.success_factors[factor]) {
+                            const stats = data.success_factors[factor][key];
+                            html += `
+                                <div class="factor-card">
+                                    <div class="factor-card-header">
+                                        <h6 class="factor-card-title">${key}</h6>
+                                    </div>
+                                    <div class="factor-stats">
+                                        <p>Success Rate: <strong>${stats.success_rate}%</strong></p>
+                                        <p>Approved: ${stats.approved} / ${stats.total}</p>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        html += '</div>';
+                    }
+                    
+                    html += `<p class="analysis-date">Analysis generated on: ${data.generated_at}</p>`;
+                    html += '</div>';
+                    resultsElement.innerHTML = html;
+                } else {
+                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                loadingElement.style.display = 'none';
+                button.disabled = false;
+                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message}</div>`;
+            });
+        }
+
+        // Generate recommendations
+        function generateRecommendations() {
+            const loadingElement = document.getElementById('recommendations-loading');
+            const resultsElement = document.getElementById('recommendations-results');
+            const button = document.getElementById('generate-recommendations-btn');
+            
+            loadingElement.style.display = 'block';
+            resultsElement.innerHTML = '';
+            button.disabled = true;
+            
+            fetch('ajax_analytics_handler.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'action=get_recommendations'
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingElement.style.display = 'none';
+                button.disabled = false;
+                
+                if (data.success) {
+                    let html = '<div class="analytics-results-content">';
+                    html += '<h4>Recommended Actions</h4>';
+                    html += '<ul class="recommendations-list">';
+                    
+                    data.recommendations.forEach(recommendation => {
+                        html += `<li><i class="fas fa-lightbulb"></i> <span>${recommendation}</span></li>`;
+                    });
+                    
+                    html += '</ul>';
+                    html += `<p class="analysis-date">Recommendations generated on: ${data.generated_at}</p>`;
+                    html += '</div>';
+                    resultsElement.innerHTML = html;
+                } else {
+                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                loadingElement.style.display = 'none';
+                button.disabled = false;
+                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message}</div>`;
+            });
+        }
     </script>
     
     <style>
@@ -3161,6 +3401,331 @@ unset($_SESSION['announcement_error']);
         .announcement-actions {
             width: 100%;
             justify-content: flex-end;
+        }
+    }
+    
+    /* Analytics Styles */
+    #analyticsSection .page-header {
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    #analyticsSection .page-header h2 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    #analyticsSection .page-header p {
+        margin: 0;
+        opacity: 0.9;
+        font-size: 1.1rem;
+    }
+    
+    #analyticsSection .form-section {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e2e8f0;
+    }
+    
+    #analyticsSection .form-section h3 {
+        color: #4f46e5;
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 1.25rem;
+    }
+    
+    .analytics-results {
+        margin: 1.5rem 0;
+        min-height: 50px;
+    }
+    
+    .analytics-results-content {
+        padding: 1.5rem;
+        background: #f8fafc;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+    
+    .analytics-results-content h4 {
+        color: #4f46e5;
+        margin-bottom: 1rem;
+        font-size: 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .analytics-results-content h5 {
+        color: #64748b;
+        margin: 1.5rem 0 1rem 0;
+        font-size: 1.1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .analytics-results-content h6 {
+        color: #475569;
+        margin-bottom: 0.5rem;
+        font-size: 1rem;
+    }
+    
+    .success-rate {
+        color: #22c55e;
+        font-weight: 700;
+        font-size: 1.75rem;
+        background: #dcfce7;
+        padding: 0.25rem 0.75rem;
+        border-radius: 0.5rem;
+    }
+    
+    .trends-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1.5rem;
+        margin-top: 1rem;
+    }
+    
+    .trend-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e2e8f0;
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .trend-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    
+    .trend-card-title {
+        color: #4f46e5;
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    
+    .trend-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .trend-card h5 {
+        color: #4f46e5;
+        margin-bottom: 1rem;
+        font-size: 1.1rem;
+    }
+    
+    .trend-stats p {
+        margin-bottom: 0.5rem;
+        color: #64748b;
+        font-size: 0.95rem;
+    }
+    
+    .trend-stats strong {
+        color: #475569;
+    }
+    
+    .trend-increasing {
+        color: #22c55e;
+    }
+    
+    .trend-decreasing {
+        color: #ef4444;
+    }
+    
+    .trend-stable {
+        color: #f59e0b;
+    }
+    
+    .factors-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 1.25rem;
+        margin-top: 1rem;
+    }
+    
+    .factor-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1.25rem;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+    }
+    
+    .factor-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+    }
+    
+    .factor-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+    }
+    
+    .factor-card-title {
+        color: #4f46e5;
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0;
+        text-transform: capitalize;
+    }
+    
+    .factor-stats p {
+        margin-bottom: 0.25rem;
+        font-size: 0.9rem;
+        color: #64748b;
+    }
+    
+    .recommendations-list {
+        list-style-type: none;
+        padding: 0;
+    }
+    
+    .recommendations-list li {
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        background: #fffbeb;
+        border-radius: 8px;
+        border-left: 4px solid #f59e0b;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+    }
+    
+    .recommendations-list li:hover {
+        transform: translateX(5px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .recommendations-list li i {
+        color: #f59e0b;
+        margin-top: 0.25rem;
+    }
+    
+    .recommendations-list li span {
+        flex: 1;
+    }
+    
+    .analysis-date {
+        margin-top: 1.5rem;
+        color: #94a3b8;
+        font-size: 0.9rem;
+        text-align: right;
+    }
+    
+    .loading-message {
+        text-align: center;
+        padding: 2rem;
+        color: #64748b;
+        background: #f1f5f9;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+    
+    .loading-message i {
+        margin-right: 0.5rem;
+        font-size: 1.2rem;
+    }
+    
+    .submit-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+    
+    /* Analytics specific error messages */
+    .analytics-results .error-message {
+        margin: 1rem 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+    
+    @media (max-width: 768px) {
+        .trends-grid,
+        .factors-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .analytics-results-content {
+            padding: 1rem;
+        }
+        
+        .trend-card,
+        .factor-card {
+            padding: 1rem;
+        }
+        
+        .trend-card-header,
+        .factor-card-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+    }
+    
+    @media (max-width: 480px) {
+        .analytics-results-content {
+            padding: 0.75rem;
+        }
+        
+        .trend-card,
+        .factor-card {
+            padding: 0.75rem;
+        }
+        
+        .recommendations-list li {
+            padding: 0.75rem;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: center;
+        }
+        
+        .recommendations-list li i {
+            margin-right: 0;
+            margin-bottom: 0.5rem;
+        }
+        
+        #analyticsSection .page-header {
+            padding: 1.5rem;
+        }
+        
+        #analyticsSection .page-header h2 {
+            font-size: 1.5rem;
+        }
+        
+        #analyticsSection .page-header p {
+            font-size: 1rem;
+        }
+        
+        #analyticsSection .form-section {
+            padding: 1rem;
         }
     }
     </style>

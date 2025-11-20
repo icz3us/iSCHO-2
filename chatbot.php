@@ -3,6 +3,10 @@
 // This file contains the HTML, CSS, and JavaScript for the chatbot interface
 ?>
 <div id="chatbot-container" class="chatbot-container">
+  <!-- Message bubble -->
+  <div id="chatbot-bubble" class="chatbot-bubble">
+    Need Assistance? Click me!
+  </div>
   <div id="chatbot-popup" class="chatbot-popup">
     <div class="chatbot-header">
       <h3>Scholarship Assistant</h3>
@@ -32,6 +36,44 @@
   right: 20px;
   z-index: 10000;
   font-family: 'Poppins', sans-serif;
+}
+
+.chatbot-bubble {
+  position: absolute;
+  bottom: 70px;
+  right: 0;
+  background: #4f46e5;
+  color: white;
+  padding: 10px 15px;
+  border-radius: 20px;
+  font-size: 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  animation: pulse 2s infinite;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chatbot-bubble:before {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  right: 20px;
+  border-width: 8px 8px 0;
+  border-style: solid;
+  border-color: #4f46e5 transparent;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .chatbot-toggle {
@@ -185,16 +227,33 @@ document.addEventListener('DOMContentLoaded', function() {
   const chatbotInput = document.getElementById('chatbot-input');
   const sendButton = document.getElementById('send-message');
   const chatbotMessages = document.getElementById('chatbot-messages');
+  const chatbotBubble = document.getElementById('chatbot-bubble');
 
   // Toggle chatbot visibility
   chatbotToggle.addEventListener('click', function() {
     chatbotPopup.classList.toggle('active');
+    // Hide bubble when chatbot is opened
+    if (chatbotPopup.classList.contains('active') && chatbotBubble) {
+      chatbotBubble.style.display = 'none';
+    }
   });
 
   // Close chatbot
   closeChatbot.addEventListener('click', function() {
     chatbotPopup.classList.remove('active');
+    // Show bubble when chatbot is closed
+    if (chatbotBubble) {
+      chatbotBubble.style.display = 'block';
+    }
   });
+
+  // Hide bubble when clicked
+  if (chatbotBubble) {
+    chatbotBubble.addEventListener('click', function() {
+      chatbotBubble.style.display = 'none';
+      chatbotPopup.classList.add('active');
+    });
+  }
 
   // Send message on button click
   sendButton.addEventListener('click', sendMessage);
