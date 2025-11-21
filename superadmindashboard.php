@@ -3098,7 +3098,14 @@ unset($_SESSION['announcement_error']);
                 },
                 body: 'action=get_scholarship_trends'
             })
-            .then(response => response.json())
+            .then(response => {
+                // Check if response is actually JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Response is not JSON: ' + contentType);
+                }
+                return response.json();
+            })
             .then(data => {
                 loadingElement.style.display = 'none';
                 button.disabled = false;
@@ -3136,7 +3143,8 @@ unset($_SESSION['announcement_error']);
             .catch(error => {
                 loadingElement.style.display = 'none';
                 button.disabled = false;
-                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message}</div>`;
+                console.error('Analytics Error:', error);
+                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to analyze trends'}</div>`;
             });
         }
 
@@ -3157,7 +3165,14 @@ unset($_SESSION['announcement_error']);
                 },
                 body: 'action=get_applicant_predictions'
             })
-            .then(response => response.json())
+            .then(response => {
+                // Check if response is actually JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Response is not JSON: ' + contentType);
+                }
+                return response.json();
+            })
             .then(data => {
                 loadingElement.style.display = 'none';
                 button.disabled = false;
@@ -3178,7 +3193,7 @@ unset($_SESSION['announcement_error']);
                                 <div class="factor-card">
                                     <div class="factor-card-header">
                                         <h6 class="factor-card-title">${key}</h6>
-                                    </div>
+                                </div>
                                     <div class="factor-stats">
                                         <p>Success Rate: <strong>${stats.success_rate}%</strong></p>
                                         <p>Approved: ${stats.approved} / ${stats.total}</p>
@@ -3200,7 +3215,8 @@ unset($_SESSION['announcement_error']);
             .catch(error => {
                 loadingElement.style.display = 'none';
                 button.disabled = false;
-                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message}</div>`;
+                console.error('Analytics Error:', error);
+                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to predict success'}</div>`;
             });
         }
 
@@ -3221,7 +3237,14 @@ unset($_SESSION['announcement_error']);
                 },
                 body: 'action=get_recommendations'
             })
-            .then(response => response.json())
+            .then(response => {
+                // Check if response is actually JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Response is not JSON: ' + contentType);
+                }
+                return response.json();
+            })
             .then(data => {
                 loadingElement.style.display = 'none';
                 button.disabled = false;
@@ -3246,7 +3269,8 @@ unset($_SESSION['announcement_error']);
             .catch(error => {
                 loadingElement.style.display = 'none';
                 button.disabled = false;
-                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message}</div>`;
+                console.error('Analytics Error:', error);
+                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to generate recommendations'}</div>`;
             });
         }
     </script>

@@ -46,6 +46,12 @@ try {
         echo json_encode(['success' => false, 'error' => 'Invalid request method']);
     }
 } catch (Exception $e) {
+    // Ensure we always return valid JSON even in case of errors
+    error_log("Analytics Error: " . $e->getMessage());
     echo json_encode(['success' => false, 'error' => 'Server error: ' . $e->getMessage()]);
+} catch (Error $e) {
+    // Handle PHP errors as well
+    error_log("Analytics PHP Error: " . $e->getMessage());
+    echo json_encode(['success' => false, 'error' => 'Server error occurred']);
 }
 ?>
