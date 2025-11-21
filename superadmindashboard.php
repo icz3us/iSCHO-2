@@ -2368,7 +2368,7 @@ unset($_SESSION['announcement_error']);
                             </div>
                         </div>
                         <div class="form-buttons">
-                            <button type="submit" name="post_announcement" class="submit-btn">
+                            <button type="submit" class="submit-btn">
                                 <i class="fas fa-paper-plane"></i>
                                 Post Announcement
                             </button>
@@ -2378,99 +2378,114 @@ unset($_SESSION['announcement_error']);
                 
                 <!-- Existing Announcements -->
                 <div class="form-section">
-                    <h3><i class="fas fa-list"></i> Posted Announcements</h3>
-                    <?php 
-                    // Fetch all announcements posted by superadmin
-                    try {
-                        $stmt = $pdo->prepare("SELECT n.id, n.message, n.image_path, n.created_at, n.updated_at FROM notices n WHERE n.user_id = ? ORDER BY n.created_at DESC");
-                        $stmt->execute([$_SESSION['user_id']]);
-                        $announcements = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                    } catch (PDOException $e) {
-                        $announcements = [];
-                        echo '<div class="error-message">Error fetching announcements: ' . $e->getMessage() . '</div>';
-                    }
-                    
-                    if (empty($announcements)):
-                    ?>
-                        <p>No announcements posted yet.</p>
-                    <?php else: ?>
-                        <div class="announcements-list">
-                            <?php foreach ($announcements as $announcement): ?>
-                                <div class="announcement-item">
-                                    <div class="announcement-header">
-                                        <div class="announcement-date">
-                                            Posted: <?php echo date('M d, Y \a\t g:i A', strtotime($announcement['created_at'])); ?>
-                                            <?php if ($announcement['updated_at'] != $announcement['created_at']): ?>
-                                                (Updated: <?php echo date('M d, Y \a\t g:i A', strtotime($announcement['updated_at'])); ?>)
-                                            <?php endif; ?>
-                                        </div>
-                                        <div class="announcement-actions">
-                                            <button class="edit-btn" onclick="showEditAnnouncementForm(<?php echo $announcement['id']; ?>)">
-                                                <i class="fas fa-edit"></i> Edit
+                    <h3><i class="fas fa-list"></i> Existing Announcements</h3>
+                    <div class="announcements-list" id="announcementsList">
+                        <?php foreach ($notices as $notice): ?>
+                            <div class="announcement-item">
+                                <div class="announcement-header">
+                                    <div class="announcement-date">
+                                        <i class="fas fa-calendar"></i>
+                                        <?php echo date('M j, Y g:i A', strtotime($notice['created_at'])); ?>
+                                    </div>
+                                    <div class="announcement-actions">
+                                        <button class="edit-btn" onclick="showEditAnnouncementForm(<?php echo $notice['id']; ?>)">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </button>
+                                        <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this announcement?');">
+                                            <input type="hidden" name="announcement_id" value="<?php echo $notice['id']; ?>">
+                                            <button type="submit" name="delete_announcement" class="delete-btn-table">
+                                                <i class="fas fa-trash"></i> Delete
                                             </button>
-                                            <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this announcement?');">
-                                                <input type="hidden" name="announcement_id" value="<?php echo $announcement['id']; ?>">
-                                                <button type="submit" name="delete_announcement" class="delete-btn-table">
-                                                    <i class="fas fa-trash-alt"></i> Delete
-                                                </button>
-                                            </form>
-                                        </div>
-                                    </div>
-                                    <div class="announcement-content">
-                                        <p><?php echo nl2br(htmlspecialchars($announcement['message'])); ?></p>
-                                    </div>
-                                    <?php if (!empty($announcement['image_path']) && file_exists($announcement['image_path'])): ?>
-                                        <div class="announcement-image" style="margin-top: 1rem;">
-                                            <img src="<?php echo htmlspecialchars($announcement['image_path']); ?>" alt="Announcement Image" style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer;" onclick="openImageModal('<?php echo htmlspecialchars($announcement['image_path']); ?>')">
-                                        </div>
-                                    <?php endif; ?>
-                                    
-                                    <!-- Edit Announcement Form (Hidden by Default) -->
-                                    <div class="edit-announcement-form" id="edit-announcement-form-<?php echo $announcement['id']; ?>" style="display: none; margin-top: 1rem;">
-                                        <form method="POST" enctype="multipart/form-data">
-                                            <input type="hidden" name="announcement_id" value="<?php echo $announcement['id']; ?>">
-                                            <div class="form-row">
-                                                <div class="form-group">
-                                                    <label for="edit_message_<?php echo $announcement['id']; ?>"><i class="fas fa-comment"></i> Message <span class="required">*</span></label>
-                                                    <div class="input-group">
-                                                        <i class="fas fa-comment"></i>
-                                                        <textarea id="edit_message_<?php echo $announcement['id']; ?>" name="message" class="form-control textarea" required><?php echo htmlspecialchars($announcement['message']); ?></textarea>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="form-row">
-                                                <div class="form-group">
-                                                    <label for="edit_image_<?php echo $announcement['id']; ?>"><i class="fas fa-image"></i> Image (Optional)</label>
-                                                    <div class="input-group">
-                                                        <i class="fas fa-image"></i>
-                                                        <input type="file" id="edit_image_<?php echo $announcement['id']; ?>" name="image" class="form-control" accept="image/*">
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <?php if (!empty($announcement['image_path']) && file_exists($announcement['image_path'])): ?>
-                                                <div class="form-row">
-                                                    <div class="form-group">
-                                                        <label><i class="fas fa-image"></i> Current Image</label>
-                                                        <div>
-                                                            <img src="<?php echo htmlspecialchars($announcement['image_path']); ?>" alt="Current Image" style="max-width: 200px; height: auto; border-radius: 8px;">
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            <?php endif; ?>
-                                            <div class="form-buttons">
-                                                <button type="submit" name="edit_announcement" class="submit-btn">
-                                                    <i class="fas fa-save"></i> Update
-                                                </button>
-                                                <button type="button" class="cancel-btn" onclick="hideEditAnnouncementForm(<?php echo $announcement['id']; ?>)">
-                                                    <i class="fas fa-times"></i> Cancel
-                                                </button>
-                                            </div>
                                         </form>
                                     </div>
                                 </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
+                                <div class="announcement-content">
+                                    <?php echo nl2br(htmlspecialchars($notice['message'])); ?>
+                                    <?php if (!empty($notice['image_path'])): ?>
+                                        <div class="announcement-image">
+                                            <img src="<?php echo htmlspecialchars($notice['image_path']); ?>" alt="Announcement Image" onclick="openImageModal('<?php echo htmlspecialchars($notice['image_path']); ?>')" style="cursor: pointer;">
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                
+                                <!-- Edit Announcement Form (Hidden by default) -->
+                                <div class="edit-announcement-form" id="edit-announcement-form-<?php echo $notice['id']; ?>" style="display: none;">
+                                    <form method="POST" enctype="multipart/form-data">
+                                        <input type="hidden" name="announcement_id" value="<?php echo $notice['id']; ?>">
+                                        <div class="form-group">
+                                            <label for="edit_message_<?php echo $notice['id']; ?>"><i class="fas fa-comment"></i> Message <span class="required">*</span></label>
+                                            <div class="input-group">
+                                                <i class="fas fa-comment"></i>
+                                                <textarea id="edit_message_<?php echo $notice['id']; ?>" name="message" class="form-control textarea" required><?php echo htmlspecialchars($notice['message']); ?></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="edit_image_<?php echo $notice['id']; ?>"><i class="fas fa-image"></i> Image (Optional)</label>
+                                            <div class="input-group">
+                                                <i class="fas fa-image"></i>
+                                                <input type="file" id="edit_image_<?php echo $notice['id']; ?>" name="image" class="form-control" accept="image/*">
+                                            </div>
+                                            <?php if (!empty($notice['image_path'])): ?>
+                                                <div class="current-image">
+                                                    <p>Current Image:</p>
+                                                    <img src="<?php echo htmlspecialchars($notice['image_path']); ?>" alt="Current Image" style="max-width: 200px; height: auto; border-radius: 8px;">
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="form-buttons">
+                                            <button type="button" class="cancel-btn" onclick="hideEditAnnouncementForm(<?php echo $notice['id']; ?>)">
+                                                <i class="fas fa-times"></i> Cancel
+                                            </button>
+                                            <button type="submit" name="edit_announcement" class="submit-btn">
+                                                <i class="fas fa-save"></i> Save Changes
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analytics Section -->
+            <div class="admin-form" id="analyticsSection" style="display: none;">
+                <div class="page-header">
+                    <h2><i class="fas fa-chart-line"></i> Predictive Analytics</h2>
+                    <p>Forecast scholarship trends and applicant success rates</p>
+                </div>
+                
+                <div class="form-section">
+                    <h3><i class="fas fa-chart-bar"></i> Scholarship Trends Analysis</h3>
+                    <div id="trends-loading" class="loading-message" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i> Analyzing scholarship trends...
+                    </div>
+                    <div id="trends-results" class="analytics-results"></div>
+                    <button id="analyze-trends-btn" class="submit-btn" onclick="analyzeScholarshipTrends()">
+                        <i class="fas fa-search"></i> Analyze Trends
+                    </button>
+                </div>
+                
+                <div class="form-section">
+                    <h3><i class="fas fa-user-graduate"></i> Applicant Success Predictions</h3>
+                    <div id="predictions-loading" class="loading-message" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i> Predicting applicant success rates...
+                    </div>
+                    <div id="predictions-results" class="analytics-results"></div>
+                    <button id="predict-applicants-btn" class="submit-btn" onclick="predictApplicantSuccess()">
+                        <i class="fas fa-brain"></i> Predict Success Rates
+                    </button>
+                </div>
+                
+                <div class="form-section">
+                    <h3><i class="fas fa-lightbulb"></i> Recommendations</h3>
+                    <div id="recommendations-loading" class="loading-message" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i> Generating recommendations...
+                    </div>
+                    <div id="recommendations-results" class="analytics-results"></div>
+                    <button id="generate-recommendations-btn" class="submit-btn" onclick="generateRecommendations()">
+                        <i class="fas fa-cogs"></i> Generate Recommendations
+                    </button>
                 </div>
             </div>
 

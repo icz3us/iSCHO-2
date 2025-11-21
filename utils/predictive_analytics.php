@@ -295,7 +295,6 @@ class PredictiveAnalytics {
      */
     private function generateAIRecommendations($analyticsData) {
         try {
-            // Get the API key (using the same key as in chatbot_api.php)
             $apiKey = 'AIzaSyAkz3y_IzDYSMhebKYv_FLiAF60ktZAH1w';
             
             if (empty($apiKey)) {
