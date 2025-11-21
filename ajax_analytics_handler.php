@@ -5,7 +5,9 @@
  */
 
 require './route_guard.php';
-require './utils/predictive_analytics.php';
+if (!class_exists('PredictiveAnalytics')) {
+    require_once __DIR__ . '/utils/predictive_analytics.php';
+}
 
 header('Content-Type: application/json');
 

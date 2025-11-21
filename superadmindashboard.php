@@ -2202,6 +2202,44 @@ unset($_SESSION['announcement_error']);
                 <p>Welcome to the Super Admin Dashboard</p>
             </div>
 
+                <!-- Predictive Analytics Section: Now always visible and left-aligned -->
+                <div class="admin-form" id="analyticsSection">
+                    <div class="page-header">
+                        <h2><i class="fas fa-chart-line"></i> Predictive Analytics</h2>
+                        <p>Forecast scholarship trends and applicant success rates</p>
+                    </div>
+                    <div class="form-section">
+                        <h3><i class="fas fa-chart-bar"></i> Scholarship Trends Analysis</h3>
+                        <div id="trends-loading" class="loading-message" style="display: none;">
+                            <i class="fas fa-spinner fa-spin"></i> Analyzing scholarship trends...
+                        </div>
+                        <div id="trends-results" class="analytics-results"></div>
+                        <button id="analyze-trends-btn" class="submit-btn" onclick="analyzeScholarshipTrends()">
+                            <i class="fas fa-search"></i> Analyze Trends
+                        </button>
+                    </div>
+                    <div class="form-section">
+                        <h3><i class="fas fa-user-graduate"></i> Applicant Success Predictions</h3>
+                        <div id="predictions-loading" class="loading-message" style="display: none;">
+                            <i class="fas fa-spinner fa-spin"></i> Predicting applicant success rates...
+                        </div>
+                        <div id="predictions-results" class="analytics-results"></div>
+                        <button id="predict-applicants-btn" class="submit-btn" onclick="predictApplicantSuccess()">
+                            <i class="fas fa-brain"></i> Predict Success Rates
+                        </button>
+                    </div>
+                    <div class="form-section">
+                        <h3><i class="fas fa-lightbulb"></i> Recommendations</h3>
+                        <div id="recommendations-loading" class="loading-message" style="display: none;">
+                            <i class="fas fa-spinner fa-spin"></i> Generating recommendations...
+                        </div>
+                        <div id="recommendations-results" class="analytics-results"></div>
+                        <button id="generate-recommendations-btn" class="submit-btn" onclick="generateRecommendations()">
+                            <i class="fas fa-cogs"></i> Generate Recommendations
+                        </button>
+                    </div>
+                </div>
+
             <!-- Display Success/Error Messages -->
             <?php if (isset($_SESSION['admin_register_success'])): ?>
                 <div class="success-message">
@@ -2670,46 +2708,6 @@ unset($_SESSION['announcement_error']);
         </div>
     </div>
 
-    <!-- Analytics Section -->
-    <div class="admin-form" id="analyticsSection" style="display: none;">
-        <div class="page-header">
-            <h2><i class="fas fa-chart-line"></i> Predictive Analytics</h2>
-            <p>Forecast scholarship trends and applicant success rates</p>
-        </div>
-        
-        <div class="form-section">
-            <h3><i class="fas fa-chart-bar"></i> Scholarship Trends Analysis</h3>
-            <div id="trends-loading" class="loading-message" style="display: none;">
-                <i class="fas fa-spinner fa-spin"></i> Analyzing scholarship trends...
-            </div>
-            <div id="trends-results" class="analytics-results"></div>
-            <button id="analyze-trends-btn" class="submit-btn" onclick="analyzeScholarshipTrends()">
-                <i class="fas fa-search"></i> Analyze Trends
-            </button>
-        </div>
-        
-        <div class="form-section">
-            <h3><i class="fas fa-user-graduate"></i> Applicant Success Predictions</h3>
-            <div id="predictions-loading" class="loading-message" style="display: none;">
-                <i class="fas fa-spinner fa-spin"></i> Predicting applicant success rates...
-            </div>
-            <div id="predictions-results" class="analytics-results"></div>
-            <button id="predict-applicants-btn" class="submit-btn" onclick="predictApplicantSuccess()">
-                <i class="fas fa-brain"></i> Predict Success Rates
-            </button>
-        </div>
-        
-        <div class="form-section">
-            <h3><i class="fas fa-lightbulb"></i> Recommendations</h3>
-            <div id="recommendations-loading" class="loading-message" style="display: none;">
-                <i class="fas fa-spinner fa-spin"></i> Generating recommendations...
-            </div>
-            <div id="recommendations-results" class="analytics-results"></div>
-            <button id="generate-recommendations-btn" class="submit-btn" onclick="generateRecommendations()">
-                <i class="fas fa-cogs"></i> Generate Recommendations
-            </button>
-        </div>
-    </div>
 
     <!-- Secret Key Verification Popup -->
     <div class="secret-key-popup" id="secretKeyPopup" <?php echo (isset($_SESSION['show_secret_key_popup']) && $_SESSION['show_secret_key_popup']) ? 'style="display: flex;"' : ''; ?>>
