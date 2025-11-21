@@ -295,7 +295,7 @@ class PredictiveAnalytics {
      */
     private function generateAIRecommendations($analyticsData) {
         try {
-            $apiKey = 'AIzaSyAkz3y_IzDYSMhebKYv_FLiAF60ktZAH1w';
+            $apiKey = 'AIzaSyAFROmTOC9U9JGwiR7YZUyYtoK3bRSJhhg';
             
             if (empty($apiKey)) {
                 throw new Exception('Gemini API key not configured');

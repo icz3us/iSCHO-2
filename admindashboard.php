@@ -2532,6 +2532,7 @@ try {
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
     <script>
+        
         document.addEventListener('DOMContentLoaded', function() {
             
             const ctxColumn = document.getElementById('applicationChart')?.getContext('2d');
@@ -4213,6 +4214,19 @@ try {
                 }
             }
         });
+        
     </script>
+    <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(function(registration) {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, function(err) {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+        });
+    }
+</script>
 </body>
 </html>

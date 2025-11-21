@@ -13,7 +13,7 @@ ini_set('display_errors', 0);
 
 // Get the API key from environment variable or config (you'll need to set this up)
 // For now, we'll use a placeholder - you'll need to get an actual API key from Google AI Studio
-define('GEMINI_API_KEY', 'AIzaSyAkz3y_IzDYSMhebKYv_FLiAF60ktZAH1w');
+define('GEMINI_API_KEY', 'AIzaSyAFROmTOC9U9JGwiR7YZUyYtoK3bRSJhhg');
 
 // Only allow POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

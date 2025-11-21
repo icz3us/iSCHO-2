@@ -2186,7 +2186,7 @@ unset($_SESSION['announcement_error']);
                 <li><a href="#" id="announcementsLink" onclick="showAnnouncements()"><i class="fas fa-bullhorn"></i><span>Announcements</span></a></li>
                 <li><a href="#" id="registerAdminLink" onclick="showRegisterAdmin()"><i class="fas fa-user-plus"></i><span>Register an Admin</span></a></li>
                 <li><a href="#" id="manageAdminsLink" onclick="showManageAdmins()"><i class="fas fa-users"></i><span>Manage Admins</span></a></li>
-                <li><a href="#" id="analyticsLink" onclick="showAnalytics()"><i class="fas fa-chart-line"></i><span>Analytics</span></a></li>
+                <li><a href="#" id="analyticsLink" onclick="showAnalyticsWithLoad()"><i class="fas fa-chart-line"></i><span>Analytics</span></a></li>
                 <li><a href="superadmindashboard.php?action=logout"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a></li>
             </ul>
         </div>
@@ -2460,7 +2460,11 @@ unset($_SESSION['announcement_error']);
                     <div id="trends-loading" class="loading-message" style="display: none;">
                         <i class="fas fa-spinner fa-spin"></i> Analyzing scholarship trends...
                     </div>
-                    <div id="trends-results" class="analytics-results"></div>
+                    <div id="trends-results" class="analytics-results">
+                        <div class="analytics-placeholder">
+                            <p>Click "Analyze Trends" to generate scholarship trends analysis.</p>
+                        </div>
+                    </div>
                     <button id="analyze-trends-btn" class="submit-btn" onclick="analyzeScholarshipTrends()">
                         <i class="fas fa-search"></i> Analyze Trends
                     </button>
@@ -2471,7 +2475,11 @@ unset($_SESSION['announcement_error']);
                     <div id="predictions-loading" class="loading-message" style="display: none;">
                         <i class="fas fa-spinner fa-spin"></i> Predicting applicant success rates...
                     </div>
-                    <div id="predictions-results" class="analytics-results"></div>
+                    <div id="predictions-results" class="analytics-results">
+                        <div class="analytics-placeholder">
+                            <p>Click "Predict Success Rates" to generate applicant success predictions.</p>
+                        </div>
+                    </div>
                     <button id="predict-applicants-btn" class="submit-btn" onclick="predictApplicantSuccess()">
                         <i class="fas fa-brain"></i> Predict Success Rates
                     </button>
@@ -2482,7 +2490,11 @@ unset($_SESSION['announcement_error']);
                     <div id="recommendations-loading" class="loading-message" style="display: none;">
                         <i class="fas fa-spinner fa-spin"></i> Generating recommendations...
                     </div>
-                    <div id="recommendations-results" class="analytics-results"></div>
+                    <div id="recommendations-results" class="analytics-results">
+                        <div class="analytics-placeholder">
+                            <p>Click "Generate Recommendations" to get AI-powered recommendations.</p>
+                        </div>
+                    </div>
                     <button id="generate-recommendations-btn" class="submit-btn" onclick="generateRecommendations()">
                         <i class="fas fa-cogs"></i> Generate Recommendations
                     </button>
@@ -3095,6 +3107,26 @@ unset($_SESSION['announcement_error']);
             document.getElementById('analyticsLink').classList.add('active');
             hideAllEditForms();
         }
+        
+        // Show analytics section and load initial data if needed
+        function showAnalyticsWithLoad() {
+            showAnalytics();
+            
+            // Check if any analytics sections need initial data
+            const trendsResults = document.getElementById('trends-results');
+            const predictionsResults = document.getElementById('predictions-results');
+            const recommendationsResults = document.getElementById('recommendations-results');
+            
+            // If all sections are showing placeholders, auto-load one section
+            const trendsHasPlaceholder = trendsResults.querySelector('.analytics-placeholder');
+            const predictionsHasPlaceholder = predictionsResults.querySelector('.analytics-placeholder');
+            const recommendationsHasPlaceholder = recommendationsResults.querySelector('.analytics-placeholder');
+            
+            if (trendsHasPlaceholder && predictionsHasPlaceholder && recommendationsHasPlaceholder) {
+                // Auto-load trends analysis
+                analyzeScholarshipTrends();
+            }
+        }
 
         // Analyze scholarship trends
         function analyzeScholarshipTrends() {
@@ -3102,8 +3134,9 @@ unset($_SESSION['announcement_error']);
             const resultsElement = document.getElementById('trends-results');
             const button = document.getElementById('analyze-trends-btn');
             
+            // Show loading, but keep existing results visible
             loadingElement.style.display = 'block';
-            resultsElement.innerHTML = '';
+            resultsElement.classList.add('loading-overlay');
             button.disabled = true;
             
             fetch('ajax_analytics_handler.php', {
@@ -3123,6 +3156,7 @@ unset($_SESSION['announcement_error']);
             })
             .then(data => {
                 loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
                 button.disabled = false;
                 
                 if (data.success) {
@@ -3152,14 +3186,40 @@ unset($_SESSION['announcement_error']);
                     html += '</div>';
                     resultsElement.innerHTML = html;
                 } else {
-                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                    // Only show error if there are no existing results
+                    if (!resultsElement.querySelector('.analytics-results-content')) {
+                        resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                    } else {
+                        // Show temporary error message
+                        const tempError = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                        const currentContent = resultsElement.innerHTML;
+                        resultsElement.innerHTML = tempError;
+                        // Restore content after 3 seconds
+                        setTimeout(() => {
+                            resultsElement.innerHTML = currentContent;
+                        }, 3000);
+                    }
                 }
             })
             .catch(error => {
                 loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
                 button.disabled = false;
                 console.error('Analytics Error:', error);
-                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to analyze trends'}</div>`;
+                
+                // Only show error if there are no existing results
+                if (!resultsElement.querySelector('.analytics-results-content')) {
+                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to analyze trends'}</div>`;
+                } else {
+                    // Show temporary error message
+                    const tempError = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to analyze trends'}</div>`;
+                    const currentContent = resultsElement.innerHTML;
+                    resultsElement.innerHTML = tempError;
+                    // Restore content after 3 seconds
+                    setTimeout(() => {
+                        resultsElement.innerHTML = currentContent;
+                    }, 3000);
+                }
             });
         }
 
@@ -3169,8 +3229,9 @@ unset($_SESSION['announcement_error']);
             const resultsElement = document.getElementById('predictions-results');
             const button = document.getElementById('predict-applicants-btn');
             
+            // Show loading, but keep existing results visible
             loadingElement.style.display = 'block';
-            resultsElement.innerHTML = '';
+            resultsElement.classList.add('loading-overlay');
             button.disabled = true;
             
             fetch('ajax_analytics_handler.php', {
@@ -3190,6 +3251,7 @@ unset($_SESSION['announcement_error']);
             })
             .then(data => {
                 loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
                 button.disabled = false;
                 
                 if (data.success) {
@@ -3224,14 +3286,40 @@ unset($_SESSION['announcement_error']);
                     html += '</div>';
                     resultsElement.innerHTML = html;
                 } else {
-                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                    // Only show error if there are no existing results
+                    if (!resultsElement.querySelector('.analytics-results-content')) {
+                        resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                    } else {
+                        // Show temporary error message
+                        const tempError = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                        const currentContent = resultsElement.innerHTML;
+                        resultsElement.innerHTML = tempError;
+                        // Restore content after 3 seconds
+                        setTimeout(() => {
+                            resultsElement.innerHTML = currentContent;
+                        }, 3000);
+                    }
                 }
             })
             .catch(error => {
                 loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
                 button.disabled = false;
                 console.error('Analytics Error:', error);
-                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to predict success'}</div>`;
+                
+                // Only show error if there are no existing results
+                if (!resultsElement.querySelector('.analytics-results-content')) {
+                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to predict success'}</div>`;
+                } else {
+                    // Show temporary error message
+                    const tempError = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to predict success'}</div>`;
+                    const currentContent = resultsElement.innerHTML;
+                    resultsElement.innerHTML = tempError;
+                    // Restore content after 3 seconds
+                    setTimeout(() => {
+                        resultsElement.innerHTML = currentContent;
+                    }, 3000);
+                }
             });
         }
 
@@ -3241,8 +3329,9 @@ unset($_SESSION['announcement_error']);
             const resultsElement = document.getElementById('recommendations-results');
             const button = document.getElementById('generate-recommendations-btn');
             
+            // Show loading, but keep existing results visible
             loadingElement.style.display = 'block';
-            resultsElement.innerHTML = '';
+            resultsElement.classList.add('loading-overlay');
             button.disabled = true;
             
             fetch('ajax_analytics_handler.php', {
@@ -3262,6 +3351,7 @@ unset($_SESSION['announcement_error']);
             })
             .then(data => {
                 loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
                 button.disabled = false;
                 
                 if (data.success) {
@@ -3278,14 +3368,40 @@ unset($_SESSION['announcement_error']);
                     html += '</div>';
                     resultsElement.innerHTML = html;
                 } else {
-                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                    // Only show error if there are no existing results
+                    if (!resultsElement.querySelector('.analytics-results-content')) {
+                        resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                    } else {
+                        // Show temporary error message
+                        const tempError = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                        const currentContent = resultsElement.innerHTML;
+                        resultsElement.innerHTML = tempError;
+                        // Restore content after 3 seconds
+                        setTimeout(() => {
+                            resultsElement.innerHTML = currentContent;
+                        }, 3000);
+                    }
                 }
             })
             .catch(error => {
                 loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
                 button.disabled = false;
                 console.error('Analytics Error:', error);
-                resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to generate recommendations'}</div>`;
+                
+                // Only show error if there are no existing results
+                if (!resultsElement.querySelector('.analytics-results-content')) {
+                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to generate recommendations'}</div>`;
+                } else {
+                    // Show temporary error message
+                    const tempError = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to generate recommendations'}</div>`;
+                    const currentContent = resultsElement.innerHTML;
+                    resultsElement.innerHTML = tempError;
+                    // Restore content after 3 seconds
+                    setTimeout(() => {
+                        resultsElement.innerHTML = currentContent;
+                    }, 3000);
+                }
             });
         }
     </script>
@@ -3489,6 +3605,20 @@ unset($_SESSION['announcement_error']);
     .analytics-results {
         margin: 1.5rem 0;
         min-height: 50px;
+    }
+    
+    .analytics-placeholder {
+        padding: 2rem;
+        text-align: center;
+        color: #94a3b8;
+        background: #f1f5f9;
+        border-radius: 12px;
+        border: 1px dashed #cbd5e1;
+    }
+    
+    .analytics-placeholder p {
+        margin: 0;
+        font-style: italic;
     }
     
     .analytics-results-content {
@@ -3704,6 +3834,23 @@ unset($_SESSION['announcement_error']);
     .analytics-results .error-message {
         margin: 1rem 0;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+    
+    /* Improved loading overlay */
+    .analytics-results.loading-overlay {
+        position: relative;
+    }
+    
+    .analytics-results.loading-overlay::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 12px;
+        z-index: 10;
     }
     
     @media (max-width: 768px) {
@@ -3948,6 +4095,17 @@ unset($_SESSION['announcement_error']);
             // Restore button state
             submitButton.innerHTML = originalText;
             submitButton.disabled = false;
+        });
+    }
+    
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(function(registration) {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, function(err) {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
         });
     }
     </script>

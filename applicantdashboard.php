@@ -482,6 +482,10 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             }
 
             $pdo->commit();
+            // Update session variables with the new name values
+            $_SESSION['lastname'] = $lastname;
+            $_SESSION['firstname'] = $firstname;
+            $_SESSION['middlename'] = $middlename;
             $_SESSION['application_success'] = $has_application ? "Application updated successfully!" : "Application submitted successfully!";
             header('Location: applicantdashboard.php');
             exit;
@@ -2042,6 +2046,17 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+   if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(function(registration) {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, function(err) {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+        });
+    }
 </script>
 
 <?php include 'chatbot.php'; ?>
