@@ -139,13 +139,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <link rel="icon" type="image/png" href="./images/logo1.png">
     <style>
         :root {
-            --primary-color: #4f46e5;
-            --primary-hover: #4338ca;
-            --bg-color: #f9fafb;
-            --card-bg: rgba(255, 255, 255, 0.95);
-            --text-color: #1f2937;
-            --text-muted: #6b7280;
-            --border-color: #e5e7eb;
+            --primary-color: #6366f1;
+            --primary-hover: #818cf8;
+            --primary-light: rgba(99, 102, 241, 0.1);
+            --secondary-color: #a855f7;
+            --accent-color: #ec4899;
+            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            --bg-gradient-light: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
+            --bg-gradient-card: linear-gradient(135deg, rgba(30, 27, 75, 0.9) 0%, rgba(49, 46, 129, 0.8) 100%);
+            --bg-main: linear-gradient(180deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+            --text-color: #f8fafc;
+            --text-muted: #cbd5e1;
+            --text-bright: #ffffff;
+            --card-bg: rgba(30, 27, 75, 0.8);
+            --card-bg-hover: rgba(49, 46, 129, 0.9);
+            --border-color: rgba(99, 102, 241, 0.3);
+            --border-hover: rgba(99, 102, 241, 0.5);
+            --shadow-sm: 0 2px 8px rgba(99, 102, 241, 0.1);
+            --shadow-md: 0 4px 16px rgba(99, 102, 241, 0.15);
+            --shadow-lg: 0 10px 30px rgba(99, 102, 241, 0.2);
+            --shadow-xl: 0 20px 50px rgba(99, 102, 241, 0.25);
             --error-color: #ef4444;
             --success-color: #22c55e;
         }
@@ -158,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         body {
-            background: var(--bg-gradient-dark);
+            background: var(--bg-main);
             background-attachment: fixed;
             color: var(--text-color);
             min-height: 100vh;
@@ -256,7 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             margin-bottom: 0.5rem;
             font-weight: 500;
             font-size: 0.9rem;
-            color: var(--text-color);
+            color: var(--text-bright);
         }
 
         .input-group {
@@ -335,14 +348,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         .back-to-login {
             display: block;
             text-align: center;
-            margin-top: 1rem;
-            color: var(--primary-color);
+            margin-top: 1.5rem;
+            background: var(--bg-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
             text-decoration: none;
             font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
         }
 
         .back-to-login:hover {
             text-decoration: underline;
+            transform: translateY(-1px);
         }
 
         @media (max-width: 768px) {

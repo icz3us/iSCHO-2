@@ -806,7 +806,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .error-message {
             background: rgba(239, 68, 68, 0.15);
             backdrop-filter: blur(10px);
-            color: #fca5a5;
+            color: var(--error-color);
             padding: 1rem;
             border-radius: 12px;
             margin-bottom: 1.25rem;
@@ -825,7 +825,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .success-message {
             background: rgba(34, 197, 94, 0.15);
             backdrop-filter: blur(10px);
-            color: #86efac;
+            color: var(--success-color);
             padding: 1rem;
             border-radius: 12px;
             margin-bottom: 1.25rem;
@@ -1110,6 +1110,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 width: 100%;
             }
         }
+
+        /* Terms Modal Scrollbar Styling */
+        #termsModalContent::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #termsModalContent::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: 4px;
+        }
+
+        #termsModalContent::-webkit-scrollbar-thumb {
+            background: var(--primary-color);
+            border-radius: 4px;
+            border: 2px solid rgba(15, 23, 42, 0.4);
+        }
+
+        #termsModalContent::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-hover);
+        }
     </style>
 </head>
 
@@ -1381,22 +1401,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     </div>
 
     <!-- Terms and Conditions Modal -->
-    <div id="termsModal" style="display:none; position:fixed; z-index:2000; left:0; top:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
-        <div style="background:#fff; padding:2rem; border-radius:10px; max-width:600px; width:90%; position:relative;">
-            <span onclick="closeTermsModal()" style="position:absolute; top:10px; right:20px; font-size:2rem; cursor:pointer;">&times;</span>
-            <h2 style="margin-bottom:1rem;">Terms and Conditions</h2>
-            <div style="max-height:60vh; overflow-y:auto; text-align:left; font-size:1rem;">
-                <ol>
-                    <li><b>Eligibility:</b> Only qualified students may apply for the scholarship. Providing false information will result in disqualification.</li>
-                    <li><b>Document Submission:</b> All required documents must be submitted in the specified format and within the application period.</li>
-                    <li><b>Data Usage:</b> Your personal data will be used solely for scholarship processing and will not be shared with unauthorized parties.</li>
-                    <li><b>Application Review:</b> Submission does not guarantee approval. All applications are subject to review and verification by the administrators.</li>
-                    <li><b>Notification:</b> Applicants will be notified of their application status via the portal and/or email.</li>
-                    <li><b>Claiming Scholarship:</b> Approved applicants must present the required documents and QR code to claim their scholarship.</li>
-                    <li><b>Changes to Terms:</b> The scholarship provider reserves the right to modify these terms at any time. Continued use of the portal constitutes acceptance of any changes.</li>
-                    <li><b>Email Validation:</b> Please use a valid email domain (e.g., gmail.com, yahoo.com, outlook.com, hotmail.com, live.com, aol.com, icloud.com, msn.com, me.com, mac.com, googlemail.com)</li>
+    <div id="termsModal" style="display:none; position:fixed; z-index:2000; left:0; top:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); backdrop-filter: blur(5px); align-items:center; justify-content:center;">
+        <div style="background: var(--bg-gradient-card); backdrop-filter: blur(20px); padding:2.5rem; border-radius:24px; max-width:700px; width:90%; position:relative; box-shadow: var(--shadow-xl); border: 1px solid var(--border-color);">
+            <span onclick="closeTermsModal()" style="position:absolute; top:1rem; right:1.5rem; font-size:2rem; cursor:pointer; color: var(--text-bright); transition: all 0.3s ease; z-index: 10;" onmouseover="this.style.color='var(--primary-color)'; this.style.transform='scale(1.2)'" onmouseout="this.style.color='var(--text-bright)'; this.style.transform='scale(1)'">&times;</span>
+            <h2 style="margin-bottom:1.5rem; background: var(--bg-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 2rem; font-weight: 700;">Terms and Conditions</h2>
+            <div id="termsModalContent" style="max-height:60vh; overflow-y:auto; text-align:left; font-size:1rem; color: var(--text-color); line-height: 1.8; padding-right: 0.5rem;">
+                <ol style="padding-left: 1.5rem; margin: 0;">
+                    <li style="margin-bottom: 1rem;"><b style="color: var(--text-bright); font-weight: 600;">Eligibility:</b> <span style="color: var(--text-color);">Only qualified students may apply for the scholarship. Providing false information will result in disqualification.</span></li>
+                    <li style="margin-bottom: 1rem;"><b style="color: var(--text-bright); font-weight: 600;">Document Submission:</b> <span style="color: var(--text-color);">All required documents must be submitted in the specified format and within the application period.</span></li>
+                    <li style="margin-bottom: 1rem;"><b style="color: var(--text-bright); font-weight: 600;">Data Usage:</b> <span style="color: var(--text-color);">Your personal data will be used solely for scholarship processing and will not be shared with unauthorized parties.</span></li>
+                    <li style="margin-bottom: 1rem;"><b style="color: var(--text-bright); font-weight: 600;">Application Review:</b> <span style="color: var(--text-color);">Submission does not guarantee approval. All applications are subject to review and verification by the administrators.</span></li>
+                    <li style="margin-bottom: 1rem;"><b style="color: var(--text-bright); font-weight: 600;">Notification:</b> <span style="color: var(--text-color);">Applicants will be notified of their application status via the portal and/or email.</span></li>
+                    <li style="margin-bottom: 1rem;"><b style="color: var(--text-bright); font-weight: 600;">Claiming Scholarship:</b> <span style="color: var(--text-color);">Approved applicants must present the required documents and QR code to claim their scholarship.</span></li>
+                    <li style="margin-bottom: 1rem;"><b style="color: var(--text-bright); font-weight: 600;">Changes to Terms:</b> <span style="color: var(--text-color);">The scholarship provider reserves the right to modify these terms at any time. Continued use of the portal constitutes acceptance of any changes.</span></li>
+                    <li style="margin-bottom: 1rem;"><b style="color: var(--text-bright); font-weight: 600;">Email Validation:</b> <span style="color: var(--text-color);">Please use a valid email domain (e.g., gmail.com, yahoo.com, outlook.com, hotmail.com, live.com, aol.com, icloud.com, msn.com, me.com, mac.com, googlemail.com)</span></li>
                 </ol>
-                <p style="margin-top:1rem; font-size:0.95rem; color:#666;">By registering, you acknowledge that you have read, understood, and agreed to these terms and conditions.</p>
+                <p style="margin-top:1.5rem; font-size:0.95rem; color: var(--text-muted); font-style: italic; border-top: 1px solid var(--border-color); padding-top: 1rem;">By registering, you acknowledge that you have read, understood, and agreed to these terms and conditions.</p>
             </div>
         </div>
     </div>

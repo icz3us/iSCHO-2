@@ -2124,15 +2124,19 @@ unset($_SESSION['announcement_error']);
         }
 
         .success-message {
-            background: #f0fdf4;
-            border: 1px solid #86efac;
-            color: #16a34a;
+            background: rgba(34, 197, 94, 0.15);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: var(--success-color);
+            border-radius: 12px;
         }
 
         .error-message {
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #dc2626;
+            background: rgba(239, 68, 68, 0.15);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--error-color);
+            border-radius: 12px;
         }
 
         @keyframes slideIn {
@@ -2477,7 +2481,7 @@ unset($_SESSION['announcement_error']);
         </div>
         <div class="main-content">
             <div class="header">
-                <h1>Dashboard</h1>
+                <h1>Super Admin Dashboard</h1>
                 <div class="user-profile">
                     <span class="username"><?php echo htmlspecialchars($full_name); ?></span>
                 </div>

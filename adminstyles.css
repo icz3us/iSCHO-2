@@ -1681,16 +1681,17 @@ input[type="radio"]:checked {
     position: absolute;
     top: 0.8rem;
     right: 0.8rem;
-    color: #4f46e5;
+    color: var(--text-bright);
     font-size: 1.5rem;
     opacity: 0.8;
-    transition: opacity 0.2s ease;
+    transition: all 0.2s ease;
     z-index: 1;
 }
 
 .document-modal .close-btn:hover {
     opacity: 1;
-    color: #4338ca;
+    color: var(--text-bright);
+    transform: scale(1.1);
 }
 
 /* Custom scrollbar for PDF viewer */

@@ -433,7 +433,6 @@ try {
       box-shadow: var(--shadow-xl);
       border-color: var(--primary-color);
       background: var(--card-bg-hover);
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%);
     }
 
     .feature-icon {
@@ -458,12 +457,25 @@ try {
       -webkit-text-fill-color: transparent;
       background-clip: text;
       font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .feature-card:hover h3 {
+      background: var(--bg-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
 
     .feature-card p {
-      color: var(--text-muted);
+      color: var(--text-color);
       line-height: 1.7;
       font-size: 1rem;
+      transition: color 0.3s ease;
+    }
+
+    .feature-card:hover p {
+      color: var(--text-bright);
     }
 
     .section-title {
@@ -531,9 +543,10 @@ try {
 
     .stat-item:hover {
       transform: translateY(-10px);
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(99, 102, 241, 0.2);
+      backdrop-filter: blur(20px);
       box-shadow: var(--shadow-xl);
-      border-color: rgba(255, 255, 255, 0.3);
+      border-color: var(--primary-color);
     }
 
     .stat-number {
@@ -698,6 +711,19 @@ try {
       transform: translateY(-5px);
       box-shadow: var(--shadow-lg);
       border-color: var(--primary-color);
+      background: var(--card-bg-hover);
+    }
+
+    .info-card:hover h3 {
+      background: var(--bg-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .info-card:hover p,
+    .info-card:hover a {
+      color: var(--text-bright);
     }
 
     .info-icon {
@@ -791,6 +817,18 @@ try {
       transform: translateY(-5px);
       box-shadow: var(--shadow-lg);
       border-color: var(--primary-color);
+      background: var(--card-bg-hover);
+    }
+
+    .team-member:hover h3 {
+      background: var(--bg-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .team-member:hover p {
+      color: var(--text-bright);
     }
 
     .team-member .avatar {
@@ -891,6 +929,18 @@ try {
       transform: translateY(-5px);
       box-shadow: var(--shadow-lg);
       border-color: var(--primary-color);
+      background: var(--card-bg-hover);
+    }
+
+    .procedure-step:hover .step-content h3 {
+      background: var(--bg-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .procedure-step:hover .step-content p {
+      color: var(--text-bright);
     }
 
     .step-number {
