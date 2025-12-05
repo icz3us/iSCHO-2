@@ -593,7 +593,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['approve']) || isset($
                         $stmt->execute([$applicant_id, $token]);
 
                         // Generate QR code using phpqrcode
-                        $qrCodeUrl = "  https://63da-2001-fd8-b812-d700-2423-abad-23bd-eb8c.ngrok-free.app/ischo2/verify_claim.php?token=" . urlencode($token);
+                        $qrCodeUrl = "https://ischo-main.site/verify_claim.php?token=" . urlencode($token);
                         $qrCodePath = 'qrcodes/' . $token . '.png';
                         if (!is_dir('qrcodes')) {
                             mkdir('qrcodes', 0777, true);
@@ -2662,47 +2662,63 @@ try {
                         });
 
                         if (code) {
-                            const url = new URL(code.data);
-                            const token = url.searchParams.get('token');
+                            // Validate that the QR code data is a valid URL before creating URL object
+                            try {
+                                const url = new URL(code.data);
+                                const token = url.searchParams.get('token');
 
-                            if (token) {
-                                fetch('admindashboard.php', {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/x-www-form-urlencoded',
-                                    },
-                                    body: 'action=verify_token&token=' + encodeURIComponent(token)
-                                })
-                                .then(response => response.json())
-                                .then(data => {
-                                    if (data.success) {
-                                        qrResult.classList.remove('error');
-                                        qrResult.classList.add('success');
-                                        qrResult.innerHTML = `<p>${data.message}</p>`;
-                                        successSound.play().catch(error => {
-                                            console.error('Error playing success sound:', error);
-                                        });
-                                        
-                                        window.location.href = `admindashboard.php?view=claim_photo&user_id=${data.user_id}`;
-                                    } else {
+                                if (token) {
+                                    fetch('admindashboard.php', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/x-www-form-urlencoded',
+                                        },
+                                        body: 'action=verify_token&token=' + encodeURIComponent(token)
+                                    })
+                                    .then(response => response.json())
+                                    .then(data => {
+                                        if (data.success) {
+                                            qrResult.classList.remove('error');
+                                            qrResult.classList.add('success');
+                                            qrResult.innerHTML = `<p>${data.message}</p>`;
+                                            successSound.play().catch(error => {
+                                                console.error('Error playing success sound:', error);
+                                            });
+                                            
+                                            window.location.href = `admindashboard.php?view=claim_photo&user_id=${data.user_id}`;
+                                        } else {
+                                            qrResult.classList.remove('success');
+                                            qrResult.classList.add('error');
+                                            qrResult.innerHTML = `<p>${data.message}</p>`;
+                                            errorSound.play().catch(error => {
+                                                console.error('Error playing error sound:', error);
+                                            });
+                                        }
+                                        stopScanner();
+                                        setTimeout(() => {
+                                            if (window.location.search.includes('view=qrscanner')) {
+                                                startScanner();
+                                            }
+                                        }, 3000);
+                                    })
+                                    .catch(error => {
                                         qrResult.classList.remove('success');
                                         qrResult.classList.add('error');
-                                        qrResult.innerHTML = `<p>${data.message}</p>`;
+                                        qrResult.innerHTML = '<p>Error verifying token: ' + error.message + '</p>';
                                         errorSound.play().catch(error => {
                                             console.error('Error playing error sound:', error);
                                         });
-                                    }
-                                    stopScanner();
-                                    setTimeout(() => {
-                                        if (window.location.search.includes('view=qrscanner')) {
-                                            startScanner();
-                                        }
-                                    }, 3000);
-                                })
-                                .catch(error => {
+                                        stopScanner();
+                                        setTimeout(() => {
+                                            if (window.location.search.includes('view=qrscanner')) {
+                                                startScanner();
+                                            }
+                                        }, 3000);
+                                    });
+                                } else {
                                     qrResult.classList.remove('success');
                                     qrResult.classList.add('error');
-                                    qrResult.innerHTML = '<p>Error verifying token: ' + error.message + '</p>';
+                                    qrResult.innerHTML = '<p>Invalid QR code: No token found.</p>';
                                     errorSound.play().catch(error => {
                                         console.error('Error playing error sound:', error);
                                     });
@@ -2712,11 +2728,12 @@ try {
                                             startScanner();
                                         }
                                     }, 3000);
-                                });
-                            } else {
+                                }
+                            } catch (urlError) {
+                                // Handle invalid URLs
                                 qrResult.classList.remove('success');
                                 qrResult.classList.add('error');
-                                qrResult.innerHTML = '<p>Invalid QR code: No token found.</p>';
+                                qrResult.innerHTML = '<p>Invalid QR code: Not a valid URL.</p>';
                                 errorSound.play().catch(error => {
                                     console.error('Error playing error sound:', error);
                                 });
