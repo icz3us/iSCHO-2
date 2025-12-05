@@ -838,10 +838,12 @@ try {
     .chart-stats-section {
         margin: 2rem 0;
         padding: 1.5rem;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        overflow: hidden; /* Add this to prevent overflow issues */
+        background: var(--bg-gradient-card);
+        backdrop-filter: blur(10px);
+        border-radius: 24px;
+        box-shadow: var(--shadow-md);
+        border: 1px solid var(--border-color);
+        overflow: hidden;
     }
 
     .charts-flex {
@@ -852,25 +854,32 @@ try {
 
     .chart-card {
         flex: 1;
-        min-width: 300px; /* Reduce minimum width for better mobile display */
+        min-width: 300px;
         padding: 1.5rem;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        background: rgba(15, 23, 42, 0.4);
+        border-radius: 16px;
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border-color);
+        backdrop-filter: blur(10px);
     }
 
     .chart-container {
         position: relative;
         width: 100%;
-        height: 300px !important; /* Force consistent height */
+        height: 300px !important;
         max-height: 400px;
     }
 
     .chart-card h3 {
         margin-bottom: 1rem;
-        color: #1f2937;
-        font-size: 1.1rem;
+        color: var(--text-bright);
+        font-size: 1.2rem;
+        font-weight: 600;
         text-align: center;
+        background: var(--bg-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
 
     /* Responsive adjustments */
@@ -1094,25 +1103,32 @@ try {
     .view-all-container {
         margin: 1rem 0;
         text-align: center;
+        width: 100%;
     }
 
     .view-all-btn {
-        background: none;
-        border: none;
-        color: #4f46e5;
+        width: 100%;
+        padding: 0.75rem 1rem;
+        background: rgba(15, 23, 42, 0.6);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        color: var(--text-bright);
         cursor: pointer;
-        font-size: 0.9rem;
-        padding: 0.5rem 1rem;
+        font-size: 1rem;
+        font-weight: 500;
         display: flex;
         align-items: center;
+        justify-content: center;
         gap: 0.5rem;
-        margin: 0 auto;
         transition: all 0.3s ease;
     }
 
     .view-all-btn:hover {
-        color: #4338ca;
-        text-decoration: underline;
+        background: rgba(49, 46, 129, 0.8);
+        border-color: var(--border-hover);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
     }
 
     .view-all-btn i {
@@ -1125,9 +1141,9 @@ try {
 
     .detailed-info {
         margin-top: 1rem;
-        padding: 1.5rem;
-        background: #f9fafb;
-        border-radius: 8px;
+        padding: 0;
+        background: transparent;
+        border-radius: 0;
         animation: slideDown 0.3s ease-out;
         max-height: 600px;
         overflow-y: auto;
@@ -1137,9 +1153,11 @@ try {
     .info-section {
         margin-bottom: 1.5rem;
         padding: 1.5rem;
-        background: #ffffff;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        background: var(--bg-gradient-card);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border-color);
         width: 100%;
     }
 
@@ -1148,19 +1166,24 @@ try {
     }
 
     .info-section h4 {
-        color: #4f46e5;
+        background: var(--bg-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
         margin-bottom: 1rem;
-        font-size: 1.1rem;
+        font-size: 1.2rem;
         font-weight: 600;
         padding-bottom: 0.5rem;
-        border-bottom: 2px solid #e5e7eb;
+        border-bottom: 2px solid var(--primary-color);
     }
 
     .family-member {
         margin-bottom: 1.5rem;
         padding: 1.5rem;
-        background: #f3f4f6;
-        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.4);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
         width: 100%;
     }
 
@@ -1169,9 +1192,12 @@ try {
     }
 
     .family-member h5 {
-        color: #4f46e5;
+        background: var(--bg-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
         margin-bottom: 1rem;
-        font-size: 1rem;
+        font-size: 1.1rem;
         font-weight: 600;
     }
 
@@ -1181,7 +1207,8 @@ try {
         display: flex;
         justify-content: space-between;
         padding: 0.5rem 0;
-        border-bottom: 1px solid #f3f4f6;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-color);
     }
 
     .detailed-info p:last-child {
@@ -1189,8 +1216,9 @@ try {
     }
 
     .detailed-info p strong {
-        color: #4b5563;
+        color: var(--text-bright);
         min-width: 200px;
+        font-weight: 600;
     }
 
     .detailed-info::-webkit-scrollbar {
@@ -1198,17 +1226,17 @@ try {
     }
 
     .detailed-info::-webkit-scrollbar-track {
-        background: #f1f1f1;
+        background: var(--bg-main);
         border-radius: 4px;
     }
 
     .detailed-info::-webkit-scrollbar-thumb {
-        background: #4f46e5;
+        background: var(--primary-color);
         border-radius: 4px;
     }
 
     .detailed-info::-webkit-scrollbar-thumb:hover {
-        background: #4338ca;
+        background: var(--primary-hover);
     }
 
     @keyframes slideDown {
@@ -1415,26 +1443,54 @@ try {
     }
 
     .deadline-card {
-        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        background: var(--bg-gradient);
         color: white;
         padding: 1.5rem;
-        border-radius: 12px;
+        border-radius: 24px;
         display: flex;
         align-items: center;
         gap: 1.5rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-lg);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .deadline-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+        pointer-events: none;
     }
 
     .deadline-card i {
         font-size: 2rem;
-        color: rgba(255, 255, 255, 0.9);
+        color: rgba(255, 255, 255, 0.95);
+        position: relative;
+        z-index: 1;
+    }
+
+    .deadline-details {
+        position: relative;
+        z-index: 1;
     }
 
     .deadline-details h3 {
         margin: 0;
         font-size: 1.2rem;
-        font-weight: 500;
-        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.95);
+    }
+
+    .deadline-details p {
+        margin: 0.5rem 0 0 0;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: white;
     }
 
     .deadline-details p {
@@ -1907,7 +1963,7 @@ try {
                     </div>
                 </div>
                 <div class="chart-stats-section">
-                    <h2>Chart Statistics</h2>
+                    <h2 style="background: var(--bg-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 1.75rem; font-weight: 700; margin-bottom: 1.5rem;">Chart Statistics</h2>
                     <div class="charts-flex">
                         <div class="chart-card municipality-distribution">
                             <h3>Municipality Distribution</h3>
@@ -2547,7 +2603,7 @@ try {
                             backgroundColor: [
                                 'rgba(34, 197, 94, 0.8)',
                                 'rgba(239, 68, 68, 0.8)',
-                                'rgba(79, 70, 229, 0.8)'
+                                'rgba(99, 102, 241, 0.8)'
                             ],
                             borderRadius: 8,
                             borderSkipped: false
@@ -2555,16 +2611,39 @@ try {
                     },
                     options: {
                         plugins: {
-                            legend: { display: false },
-                            tooltip: { enabled: true },
+                            legend: { 
+                                display: false 
+                            },
+                            tooltip: { 
+                                enabled: true,
+                                backgroundColor: 'rgba(30, 27, 75, 0.95)',
+                                titleColor: '#f8fafc',
+                                bodyColor: '#cbd5e1',
+                                borderColor: 'rgba(99, 102, 241, 0.3)',
+                                borderWidth: 1
+                            },
                             title: {
                                 display: false
                             }
                         },
                         scales: {
+                            x: {
+                                ticks: {
+                                    color: '#cbd5e1'
+                                },
+                                grid: {
+                                    color: 'rgba(99, 102, 241, 0.2)'
+                                }
+                            },
                             y: {
                                 beginAtZero: true,
-                                ticks: { stepSize: 1 }
+                                ticks: { 
+                                    stepSize: 1,
+                                    color: '#cbd5e1'
+                                },
+                                grid: {
+                                    color: 'rgba(99, 102, 241, 0.2)'
+                                }
                             }
                         }
                     }
@@ -2582,21 +2661,32 @@ try {
                             label: 'Applicants by Gender',
                             data: [<?php echo $male_count; ?>, <?php echo $female_count; ?>, <?php echo $other_count; ?>],
                             backgroundColor: [
-                                'rgba(54, 162, 235, 0.8)',
-                                'rgba(255, 99, 132, 0.8)',
-                                'rgba(255, 206, 86, 0.8)'
+                                'rgba(99, 102, 241, 0.8)',
+                                'rgba(168, 85, 247, 0.8)',
+                                'rgba(236, 72, 153, 0.8)'
                             ],
                             borderWidth: 2,
-                            borderColor: '#fff'
+                            borderColor: 'rgba(15, 23, 42, 0.6)'
                         }]
                     },
                     options: {
                         plugins: {
                             legend: {
                                 position: 'bottom',
-                                labels: { font: { size: 14, weight: 'bold' } }
+                                labels: { 
+                                    font: { size: 14, weight: 'bold' },
+                                    color: '#cbd5e1',
+                                    padding: 15
+                                }
                             },
-                            tooltip: { enabled: true },
+                            tooltip: { 
+                                enabled: true,
+                                backgroundColor: 'rgba(30, 27, 75, 0.95)',
+                                titleColor: '#f8fafc',
+                                bodyColor: '#cbd5e1',
+                                borderColor: 'rgba(99, 102, 241, 0.3)',
+                                borderWidth: 1
+                            },
                             title: {
                                 display: false
                             }
@@ -3071,8 +3161,8 @@ try {
                             {
                                 label: 'Total Applicants',
                                 data: municipalityData.map(item => parseInt(item.total_count) || 0),
-                                backgroundColor: '#4f46e5',
-                                borderColor: '#4338ca',
+                                backgroundColor: '#6366f1',
+                                borderColor: '#4f46e5',
                                 borderWidth: 1,
                                 maxBarThickness: 30,
                                 barPercentage: 0.8,
@@ -3186,8 +3276,8 @@ try {
                             {
                                 label: 'Total Applicants',
                                 data: collegeData.map(item => parseInt(item.total_count) || 0),
-                                backgroundColor: '#4f46e5',
-                                borderColor: '#4338ca',
+                                backgroundColor: '#6366f1',
+                                borderColor: '#4f46e5',
                                 borderWidth: 1,
                                 maxBarThickness: 30,
                                 barPercentage: 0.8,
@@ -3231,18 +3321,21 @@ try {
                                 beginAtZero: true,
                                 ticks: {
                                     stepSize: 1,
+                                    color: '#cbd5e1',
                                     font: {
                                         size: 10
                                     }
                                 },
                                 grid: {
-                                    display: true
+                                    display: true,
+                                    color: 'rgba(99, 102, 241, 0.2)'
                                 }
                             },
                             x: {
                                 ticks: {
                                     maxRotation: 45,
                                     minRotation: 45,
+                                    color: '#cbd5e1',
                                     font: {
                                         size: 10
                                     },
@@ -3259,8 +3352,10 @@ try {
                                 display: true,
                                 position: 'top',
                                 labels: {
+                                    color: '#cbd5e1',
                                     font: {
-                                        size: 12
+                                        size: 12,
+                                        weight: 'bold'
                                     },
                                     usePointStyle: true,
                                     padding: 20
@@ -3268,9 +3363,14 @@ try {
                             },
                             tooltip: {
                                 enabled: true,
-                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                backgroundColor: 'rgba(30, 27, 75, 0.95)',
+                                titleColor: '#f8fafc',
+                                bodyColor: '#cbd5e1',
+                                borderColor: 'rgba(99, 102, 241, 0.3)',
+                                borderWidth: 1,
                                 titleFont: {
-                                    size: 12
+                                    size: 12,
+                                    weight: 'bold'
                                 },
                                 bodyFont: {
                                     size: 12
@@ -3393,8 +3493,8 @@ try {
                             {
                                 label: 'Total Applicants',
                                 data: municipalityData.map(item => parseInt(item.total_count) || 0),
-                                backgroundColor: '#4f46e5',
-                                borderColor: '#4338ca',
+                                backgroundColor: '#6366f1',
+                                borderColor: '#4f46e5',
                                 borderWidth: 1,
                                 maxBarThickness: 30,
                                 barPercentage: 0.8,
@@ -3508,8 +3608,8 @@ try {
                             {
                                 label: 'Total Applicants',
                                 data: collegeData.map(item => parseInt(item.total_count) || 0),
-                                backgroundColor: '#4f46e5',
-                                borderColor: '#4338ca',
+                                backgroundColor: '#6366f1',
+                                borderColor: '#4f46e5',
                                 borderWidth: 1,
                                 maxBarThickness: 30,
                                 barPercentage: 0.8,

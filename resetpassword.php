@@ -122,8 +122,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
         }
 
         body {
-            background: url('./images/bg.jpg') no-repeat center center fixed;
-            background-size: cover;
+            background: var(--bg-gradient-dark);
+            background-attachment: fixed;
             color: var(--text-color);
             min-height: 100vh;
             position: relative;
@@ -136,8 +136,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.2);
+            background: url('./images/bg.jpg') no-repeat center center fixed;
+            background-size: cover;
+            opacity: 0.15;
             z-index: 1;
+        }
+
+        body::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 30% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 80%, rgba(168, 85, 247, 0.1) 0%, transparent 50%);
+            z-index: 1;
+            pointer-events: none;
         }
 
         .main-content {
@@ -151,14 +166,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
         }
 
         .reset-container {
-            background-color: var(--card-bg);
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 10px 15px rgba(0, 0, 0, 0.03);
+            background: var(--bg-gradient-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: var(--shadow-xl);
             width: 100%;
             max-width: 500px;
-            padding: 2rem;
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(10px);
+            padding: 2.5rem;
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .reset-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: var(--bg-gradient);
+            z-index: 1;
         }
 
         .reset-header {
@@ -168,8 +197,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
 
         .reset-header h1 {
             font-size: 1.75rem;
-            font-weight: 600;
-            color: var(--text-color);
+            font-weight: 700;
+            background: var(--bg-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
         }
 
         .reset-header p {
@@ -205,18 +238,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
 
         .form-control {
             width: 100%;
-            padding: 0.75rem 2.5rem 0.75rem 2.5rem;
+            padding: 0.875rem 2.5rem 0.875rem 2.5rem;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 1rem;
             transition: all 0.3s ease;
-            background-color: rgba(255, 255, 255, 0.8);
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text-bright);
+            backdrop-filter: blur(10px);
+        }
+
+        .form-control::placeholder {
+            color: var(--text-muted);
         }
 
         .form-control:focus {
             outline: none;
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            background: rgba(15, 23, 42, 0.8);
+            transform: translateY(-2px);
         }
 
         .toggle-password {
@@ -243,19 +284,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $show_form) {
 
         .reset-btn {
             width: 100%;
-            background-color: var(--primary-color);
+            background: var(--bg-gradient);
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            padding: 0.875rem 1.5rem;
             font-size: 1rem;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.3s ease;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
         }
 
         .reset-btn:hover {
-            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
         }
 
         .error-message {

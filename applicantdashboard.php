@@ -1800,12 +1800,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 </script>
 <style>
-.faqs-content { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.07); padding: 2rem; margin-top: 2rem; }
+.faqs-content { 
+    background: var(--bg-gradient-card); 
+    backdrop-filter: blur(10px);
+    border-radius: 24px; 
+    box-shadow: var(--shadow-md); 
+    padding: 2rem; 
+    margin-top: 2rem; 
+    border: 1px solid var(--border-color);
+}
+.faqs-content .header h1 {
+    background: var(--bg-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 1.5rem;
+}
+.faqs-content h4 {
+    color: var(--text-color);
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
 .faqs-list { max-width: 700px; margin: 0 auto; }
 .faq-item { margin-bottom: 1.5rem; }
-.faq-question { width: 100%; text-align: left; background: #f1f1f1; border: none; outline: none; padding: 1rem; font-size: 1.1rem; font-weight: 500; border-radius: 8px; cursor: pointer; transition: background 0.2s; }
-.faq-question.open, .faq-question:hover { background: #e0e7ff; }
-.faq-answer { display: none; padding: 1rem; background: #f9fafb; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb; margin-top: -8px; font-size: 1rem; }
+.faq-question { 
+    width: 100%; 
+    text-align: left; 
+    background: rgba(15, 23, 42, 0.6); 
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+    outline: none; 
+    padding: 1rem; 
+    font-size: 1.1rem; 
+    font-weight: 500; 
+    border-radius: 12px; 
+    cursor: pointer; 
+    transition: all 0.3s ease;
+    color: var(--text-bright);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.faq-question::after {
+    content: '▼';
+    font-size: 0.8rem;
+    transition: transform 0.3s ease;
+    color: var(--primary-color);
+}
+.faq-question.open::after {
+    transform: rotate(180deg);
+}
+.faq-question.open, .faq-question:hover { 
+    background: rgba(49, 46, 129, 0.8); 
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+.faq-answer { 
+    display: none; 
+    padding: 1rem; 
+    background: rgba(15, 23, 42, 0.4); 
+    backdrop-filter: blur(10px);
+    border-radius: 0 0 12px 12px; 
+    border: 1px solid var(--border-color);
+    border-top: none;
+    margin-top: -8px; 
+    font-size: 1rem;
+    color: var(--text-color);
+    line-height: 1.6;
+}
+.faq-answer.show {
+    display: block;
+}
 .stat-card {
     transition: transform 0.2s ease;
 }

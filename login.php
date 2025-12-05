@@ -485,15 +485,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <link rel="icon" type="image/png" href="./images/logo1.png">
     <style>
         :root {
-            --primary-color: #4f46e5;
-            --primary-hover: #4338ca;
-            --bg-color: #f9fafb;
-            --card-bg: rgba(255, 255, 255, 0.95);
-            --text-color: #1f2937;
-            --text-muted: #6b7280;
-            --border-color: #e5e7eb;
+            --primary-color: #6366f1;
+            --primary-hover: #818cf8;
+            --primary-light: rgba(99, 102, 241, 0.1);
+            --secondary-color: #a855f7;
+            --accent-color: #ec4899;
+            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            --bg-gradient-dark: linear-gradient(180deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+            --bg-gradient-card: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(49, 46, 129, 0.9) 100%);
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 27, 75, 0.95);
+            --card-bg-hover: rgba(49, 46, 129, 0.98);
+            --text-color: #f8fafc;
+            --text-muted: #cbd5e1;
+            --text-bright: #ffffff;
+            --border-color: rgba(99, 102, 241, 0.3);
+            --border-hover: rgba(99, 102, 241, 0.5);
             --error-color: #ef4444;
             --success-color: #22c55e;
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+            --shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.6);
         }
 
         * {
@@ -504,8 +517,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         body {
-            background: url('./images/bg.jpg') no-repeat center center fixed;
-            background-size: cover;
+            background: var(--bg-gradient-dark);
+            background-attachment: fixed;
             color: var(--text-color);
             min-height: 100vh;
             position: relative;
@@ -518,8 +531,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.2);
+            background: url('./images/bg.jpg') no-repeat center center fixed;
+            background-size: cover;
+            opacity: 0.15;
             z-index: 1;
+        }
+
+        body::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 30% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 80%, rgba(168, 85, 247, 0.1) 0%, transparent 50%);
+            z-index: 1;
+            pointer-events: none;
         }
 
         .main-content {
@@ -533,24 +561,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         .login-container, .otp-container {
-            background-color: var(--card-bg);
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 10px 15px rgba(0, 0, 0, 0.03);
+            background: var(--bg-gradient-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: var(--shadow-xl);
             width: 100%;
             max-width: 500px;
-            padding: 2rem;
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(10px);
+            padding: 2.5rem;
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
         }
+
+        .login-container::before, .otp-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: var(--bg-gradient);
+            z-index: 1;
+        }
+
+        .login-container:hover, .otp-container:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-xl);
+            border-color: var(--border-hover);
+        }
+
         .register-container {
-            background-color: var(--card-bg);
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 10px 15px rgba(0, 0, 0, 0.03);
+            background: var(--bg-gradient-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: var(--shadow-xl);
             width: 100%;
             max-width: 900px;
-            padding: 2rem;
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(10px);
+            padding: 2.5rem;
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .register-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: var(--bg-gradient);
+            z-index: 1;
+        }
+
+        .register-container:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-xl);
+            border-color: var(--border-hover);
         }
 
         .otp-container {
@@ -570,23 +641,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             width: 100px;
             height: auto;
             margin-bottom: 0.5rem;
+            filter: drop-shadow(0 10px 20px rgba(99, 102, 241, 0.3));
+            transition: transform 0.3s ease;
+        }
+
+        .login-header img:hover {
+            transform: scale(1.05);
         }
 
         .login-header h1 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--text-color);
+            font-size: 1.75rem;
+            font-weight: 700;
+            background: var(--bg-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
         }
 
         .login-header h2 {
             font-size: 1.3rem;
-            font-weight: 500;
-            color: var(--text-color);
+            font-weight: 600;
+            color: var(--text-bright);
+            margin-bottom: 0.5rem;
         }
 
         .login-header p, .register-header p, .otp-header p {
             color: var(--text-muted);
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             margin-top: 0.5rem;
         }
 
@@ -598,8 +680,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             display: block;
             margin-bottom: 0.5rem;
             font-weight: 500;
-            font-size: 0.9rem;
-            color: var(--text-color);
+            font-size: 0.95rem;
+            color: var(--text-bright);
         }
 
         .input-group {
@@ -614,22 +696,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             left: 1rem;
             transform: translateY(-50%);
             color: var(--text-muted);
+            z-index: 2;
         }
 
         .form-control {
             width: 100%;
-            padding: 0.75rem 2.5rem 0.75rem 2.5rem;
+            padding: 0.875rem 2.5rem 0.875rem 2.5rem;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 1rem;
             transition: all 0.3s ease;
-            background-color: rgba(255, 255, 255, 0.8);
+            background: rgba(15, 23, 42, 0.5);
+            color: var(--text-bright);
+            backdrop-filter: blur(10px);
+        }
+
+        .form-control::placeholder {
+            color: var(--text-muted);
         }
 
         .form-control:focus {
             outline: none;
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            background: rgba(15, 23, 42, 0.7);
+            transform: translateY(-2px);
         }
 
         .toggle-password {
@@ -640,58 +731,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             cursor: pointer;
             color: var(--text-muted);
             font-size: 1rem;
+            z-index: 2;
+            transition: all 0.3s ease;
         }
 
         .toggle-password:hover {
-            color: var(--text-color);
+            color: var(--primary-color);
+            transform: translateY(-50%) scale(1.1);
         }
 
         .login-btn, .register-btn, .otp-btn {
             width: 100%;
-            background-color: var(--primary-color);
+            background: var(--bg-gradient);
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            padding: 0.875rem 1.5rem;
             font-size: 1rem;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.3s ease;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-btn::before, .register-btn::before, .otp-btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .login-btn:hover::before, .register-btn:hover::before, .otp-btn:hover::before {
+            width: 300px;
+            height: 300px;
         }
 
         .login-btn:hover, .register-btn:hover, .otp-btn:hover {
-            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .login-btn span, .register-btn span, .otp-btn span {
+            position: relative;
+            z-index: 1;
         }
 
         .forgot-password {
             display: block;
             text-align: center;
             margin-top: 1rem;
-            color: var(--primary-color);
+            background: var(--bg-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
             text-decoration: none;
             font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
         }
 
         .forgot-password:hover {
             text-decoration: underline;
+            transform: translateY(-1px);
         }
 
         .error-message {
-            background-color: rgba(239, 68, 68, 0.1);
-            color: var(--error-color);
-            padding: 0.75rem;
-            border-radius: 8px;
+            background: rgba(239, 68, 68, 0.15);
+            backdrop-filter: blur(10px);
+            color: #fca5a5;
+            padding: 1rem;
+            border-radius: 12px;
             margin-bottom: 1.25rem;
             font-size: 0.9rem;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .error-message::before {
+            content: '⚠';
+            font-size: 1.2rem;
         }
 
         .success-message {
-            background-color: rgba(34, 197, 94, 0.1);
-            color: var(--success-color);
-            padding: 0.75rem;
-            border-radius: 8px;
+            background: rgba(34, 197, 94, 0.15);
+            backdrop-filter: blur(10px);
+            color: #86efac;
+            padding: 1rem;
+            border-radius: 12px;
             margin-bottom: 1.25rem;
             font-size: 0.9rem;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .success-message::before {
+            content: '✓';
+            font-size: 1.2rem;
         }
 
         .otp-error-message {
@@ -702,18 +849,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         .register-link {
             text-align: center;
-            margin-top: 1rem;
+            margin-top: 1.5rem;
             font-size: 0.9rem;
         }
 
         .register-link a {
-            color: var(--primary-color);
+            background: var(--bg-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
             text-decoration: none;
             cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
         }
 
         .register-link a:hover {
             text-decoration: underline;
+            transform: translateY(-1px);
         }
 
         .register-popup, .otp-popup {
@@ -723,7 +876,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
             z-index: 1000;
             align-items: center;
             justify-content: center;
@@ -776,18 +930,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         .close-btn {
             position: absolute;
-            top: 10px;
-            right: 10px;
-            font-size: 1.5rem;
+            top: 15px;
+            right: 15px;
+            font-size: 1.75rem;
             color: var(--text-muted);
             cursor: pointer;
-            background: none;
-            border: none;
-            padding: 0;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            padding: 0.5rem;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            z-index: 10;
         }
 
         .close-btn:hover {
-            color: var(--text-color);
+            color: var(--text-bright);
+            background: rgba(239, 68, 68, 0.2);
+            border-color: var(--error-color);
+            transform: rotate(90deg);
         }
 
         .form-section {
@@ -795,11 +960,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         .form-section h3 {
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             font-weight: 600;
-            color: var(--primary-color);
+            background: var(--bg-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
             margin-bottom: 1rem;
-            border-bottom: 2px solid var(--primary-color);
+            border-bottom: 2px solid;
+            border-image: var(--bg-gradient) 1;
             padding-bottom: 0.5rem;
         }
 
@@ -826,19 +995,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         .form-buttons .cancel-btn {
-            background-color: #6b7280;
+            background: linear-gradient(135deg, #475569 0%, #64748b 100%);
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            padding: 0.75rem 1.5rem;
             font-size: 1rem;
             font-weight: 500;
             cursor: pointer;
-            transition: background-color 0.3s ease;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(71, 85, 105, 0.3);
         }
 
         .form-buttons .cancel-btn:hover {
-            background-color: #5a6268;
+            background: linear-gradient(135deg, #334155 0%, #475569 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(71, 85, 105, 0.4);
         }
 
         .password-requirements {
@@ -864,6 +1036,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         .validation-text.valid {
             color: var(--success-color);
+        }
+
+        select.form-control {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            padding-right: 2.5rem;
+            cursor: pointer;
+        }
+
+        select.form-control:focus {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236366f1' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+        }
+
+        textarea.form-control {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        input[type="checkbox"], input[type="radio"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary-color);
+            cursor: pointer;
+        }
+
+        input[type="checkbox"]:checked, input[type="radio"]:checked {
+            accent-color: var(--primary-color);
         }
 
         @media (max-width: 768px) {
@@ -954,7 +1155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     </div>
                 </div>
                 
-                <button type="submit" class="login-btn">Sign In</button>
+                <button type="submit" class="login-btn"><span>Sign In</span></button>
             </form>
             
             <a href="forgotpassword.php" class="forgot-password">Forgot your password?</a>
@@ -1135,7 +1336,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     </div>
                     <div class="form-buttons" style="width: 100%; display: flex; flex-direction: row; gap: 1rem;">
                         <button type="button" class="cancel-btn" onclick="hideRegisterPopup()">Cancel</button>
-                        <button type="submit" class="register-btn" name="register" id="registerBtn" disabled style="background-color: #bdbdbd; cursor: not-allowed;">Register</button>
+                        <button type="submit" class="register-btn" name="register" id="registerBtn" disabled style="opacity: 0.6; cursor: not-allowed;"><span>Register</span></button>
                     </div>
                 </div>
             </form>
@@ -1173,7 +1374,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 
                 <div class="form-buttons">
                     <button type="button" class="cancel-btn" onclick="hideOTPPopup()">Cancel</button>
-                    <button type="submit" class="otp-btn" name="verify_otp">Verify</button>
+                    <button type="submit" class="otp-btn" name="verify_otp"><span>Verify</span></button>
                 </div>
             </form>
         </div>
@@ -1501,11 +1702,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             function updateRegisterBtn() {
                 if (agreeTerms.checked && agreePrivacy.checked) {
                     registerBtn.disabled = false;
-                    registerBtn.style.backgroundColor = '';
-                    registerBtn.style.cursor = '';
+                    registerBtn.style.opacity = '1';
+                    registerBtn.style.cursor = 'pointer';
                 } else {
                     registerBtn.disabled = true;
-                    registerBtn.style.backgroundColor = '#bdbdbd';
+                    registerBtn.style.opacity = '0.6';
                     registerBtn.style.cursor = 'not-allowed';
                 }
             }
@@ -1577,8 +1778,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             // Enable/disable register button
             registerBtn.disabled = !isValid;
-            registerBtn.style.backgroundColor = isValid ? '' : '#bdbdbd';
+            registerBtn.style.opacity = isValid ? '1' : '0.6';
             registerBtn.style.cursor = isValid ? 'pointer' : 'not-allowed';
+                    registerBtn.disabled = !isValid;
         }
 
         // Add event listeners for form validation
@@ -1652,8 +1854,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 if (registerBtn) {
                     const canRegister = isValidEmail && agreeTerms.checked && agreePrivacy.checked;
                     registerBtn.disabled = !canRegister;
-                    registerBtn.style.backgroundColor = canRegister ? '' : '#bdbdbd';
+                    registerBtn.style.opacity = canRegister ? '1' : '0.6';
                     registerBtn.style.cursor = canRegister ? 'pointer' : 'not-allowed';
+                    registerBtn.disabled = !canRegister;
                 }
             }
         }
