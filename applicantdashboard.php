@@ -92,6 +92,13 @@ try {
         // Fetch claim status and photo
         $claim_status = isset($users_info['claim_status']) && $users_info['claim_status'] === 'Claimed' ? 'Claimed' : 'Not Claimed';
         $claim_photo_path = !empty($user_docs['claim_photo_path']) ? $user_docs['claim_photo_path'] : '';
+        
+        // Fetch document verification status
+        require_once './utils/document_verification.php';
+        $docVerification = new DocumentVerification($pdo);
+        $doc_verification_status = $docVerification->getUserDocumentStatus($user_id);
+    } else {
+        $doc_verification_status = [];
     }
 
     $stmt = $pdo->prepare("SELECT message, created_at FROM notices WHERE user_id = ? ORDER BY created_at DESC");
@@ -140,6 +147,14 @@ try {
 
 // Handle Form Submission
 if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_application'])) {
+    // CSRF Protection
+    require_once './utils/file_security.php';
+    if (!validateCSRFToken()) {
+        $_SESSION['application_error'] = "Security token validation failed. Please try again.";
+        header('Location: applicantdashboard.php?view=Application');
+        exit;
+    }
+    
     // Program Selection
     $program_id = !empty($_POST['program_id']) ? intval($_POST['program_id']) : null;
     
@@ -248,15 +263,13 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
         }
     }
 
-    // File Upload Handling
-    $upload_dir = './Uploads/';
-    if (!is_dir($upload_dir)) {
-        mkdir($upload_dir, 0777, true);
-    }
-
-    $allowed_types = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
-    $max_size = 5 * 1024 * 1024;
-
+    // Secure File Upload Handling
+    require_once './utils/file_security.php';
+    require_once './utils/document_verification.php';
+    
+    $fileSecurity = new FileSecurity($pdo);
+    $docVerification = new DocumentVerification($pdo);
+    
     $upload_error = '';
     $file_paths = [
         'cor_file' => $user_docs['cor_file_path'] ?? '',
@@ -265,48 +278,56 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
         'profile_picture' => $user_docs['profile_picture_path'] ?? '',
         'claim_photo' => $user_docs['claim_photo_path'] ?? ''
     ];
+    
+    $file_hashes = []; // Store file hashes for integrity verification
+    $uploaded_files = []; // Track successfully uploaded files for rollback if needed
 
+    // Process file uploads for required documents
     foreach (['cor_file', 'indigency_file', 'voter_file', 'profile_picture'] as $file_key) {
         if (!empty($_FILES[$file_key]['name'])) {
             $file = $_FILES[$file_key];
-            $file_name = basename($file['name']);
-            $file_type = $file['type'];
-            $file_size = $file['size'];
-            $file_tmp = $file['tmp_name'];
-
-            // Only allow images for profile_picture
-            if ($file_key === 'profile_picture') {
-                $allowed_profile_types = ['image/png', 'image/jpeg', 'image/jpg'];
-                if (!in_array($file_type, $allowed_profile_types)) {
-                    $upload_error = "Invalid file type for profile_picture. Only PNG, JPEG allowed.";
-                    break;
+            
+            // Use secure upload function
+            $upload_result = $fileSecurity->secureUpload($file, $file_key, $user_id);
+            
+            if (!$upload_result['success']) {
+                // Clean up any previously uploaded files in this transaction
+                foreach ($uploaded_files as $uploaded_file) {
+                    if (file_exists($uploaded_file)) {
+                        @unlink($uploaded_file);
+                    }
                 }
-            } else {
-                if (!in_array($file_type, $allowed_types)) {
-                    $upload_error = "Invalid file type for $file_key. Only PDF, PNG, JPEG allowed.";
-                    break;
-                }
-            }
-
-            if ($file_size > $max_size) {
-                $upload_error = "File $file_key is too large. Max size is 5MB.";
+                $upload_error = $upload_result['message'];
                 break;
             }
-
-            $file_ext = pathinfo($file_name, PATHINFO_EXTENSION);
-            $new_file_name = $file_key . '_' . $user_id . '_' . time() . '.' . $file_ext;
-            $file_path = $upload_dir . $new_file_name;
-
-            if (!move_uploaded_file($file_tmp, $file_path)) {
-                $upload_error = "Failed to upload $file_key.";
-                break;
+            
+            // Store file information
+            $old_file_path = $file_paths[$file_key];
+            $file_paths[$file_key] = $upload_result['file_path'];
+            $file_hashes[$file_key] = $upload_result['file_hash'];
+            $uploaded_files[] = $upload_result['file_path'];
+            
+            // Delete old file if it exists and is different
+            if (!empty($old_file_path) && file_exists($old_file_path) && $old_file_path !== $upload_result['file_path']) {
+                $fileSecurity->secureDelete($old_file_path);
             }
-
-            if (!empty($file_paths[$file_key]) && file_exists($file_paths[$file_key])) {
-                unlink($file_paths[$file_key]);
+            
+            // Record document submission for verification (except profile_picture)
+            if ($file_key !== 'profile_picture') {
+                $record_result = $docVerification->recordDocumentSubmission(
+                    $user_id,
+                    $file_key,
+                    $upload_result['file_path'],
+                    $upload_result['file_hash'],
+                    $upload_result['file_size'],
+                    $upload_result['mime_type']
+                );
+                
+                if (!$record_result['success']) {
+                    error_log("Failed to record document submission: " . $record_result['message']);
+                    // Continue anyway - file is uploaded, just verification tracking failed
+                }
             }
-
-            $file_paths[$file_key] = $file_path;
         } elseif (!$has_application && empty($file_paths[$file_key])) {
             $upload_error = "Missing required file: $file_key.";
             break;
@@ -316,6 +337,9 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
     if (empty($upload_error)) {
         try {
             $pdo->beginTransaction();
+            
+            // Track if we need to rollback file uploads
+            $transaction_success = false;
 
             // Update users table
             $stmt = $pdo->prepare("
@@ -881,6 +905,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             </div>
         </div>
 
+        <!-- Document Verification Status Section -->
+        <?php if ($has_application && !empty($doc_verification_status)): ?>
+        <div class="section document-verification">
+            <h3><i class="fas fa-shield-alt"></i> Document Verification Status</h3>
+            <div class="verification-cards">
+                <?php 
+                $doc_names = [
+                    'cor_file' => 'Certificate of Registration',
+                    'indigency_file' => 'Certificate of Indigency',
+                    'voter_file' => "Voter's Certificate"
+                ];
+                $status_colors = [
+                    'Verified' => 'approved',
+                    'Pending' => 'review',
+                    'Under Review' => 'review',
+                    'Rejected' => 'denied'
+                ];
+                foreach (['cor_file', 'indigency_file', 'voter_file'] as $doc_type):
+                    $status = $doc_verification_status[$doc_type]['verification_status'] ?? 'Pending';
+                    $color_class = $status_colors[$status] ?? 'review';
+                ?>
+                <div class="stat-card">
+                    <i class="fas fa-file-check"></i>
+                    <p><?php echo htmlspecialchars($doc_names[$doc_type] ?? $doc_type); ?></p>
+                    <h3 class="<?php echo $color_class; ?>">
+                        <?php echo htmlspecialchars($status); ?>
+                    </h3>
+                    <?php if (isset($doc_verification_status[$doc_type]['verified_at'])): ?>
+                        <p style="font-size: 0.85em; color: #666; margin-top: 0.5rem;">
+                            <?php echo $status === 'Verified' ? 'Verified on: ' : 'Updated on: '; ?>
+                            <?php echo date('M d, Y', strtotime($doc_verification_status[$doc_type]['verified_at'])); ?>
+                        </p>
+                    <?php endif; ?>
+                    <?php if (isset($doc_verification_status[$doc_type]['rejection_reason']) && !empty($doc_verification_status[$doc_type]['rejection_reason'])): ?>
+                        <p style="font-size: 0.85em; color: #d32f2f; margin-top: 0.5rem;">
+                            <strong>Reason:</strong> <?php echo htmlspecialchars($doc_verification_status[$doc_type]['rejection_reason']); ?>
+                        </p>
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Claim Status Section -->
         <div class="section claim-status">
             <div class="stat-card">
@@ -971,6 +1039,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         <!-- Form Section -->
         <form id="applicationFormContent" method="POST" enctype="multipart/form-data">
+            <?php 
+            // Initialize CSRF token for form
+            require_once './utils/file_security.php';
+            initCSRFToken();
+            $csrf_token = generateCSRFToken();
+            ?>
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8'); ?>">
             <!-- Step 0: Program Selection -->
             <div class="form-section" id="step0" style="display: none;">
                 <h3>Select Scholarship Program</h3>
