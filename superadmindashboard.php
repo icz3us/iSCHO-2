@@ -301,11 +301,27 @@ $formatted_deadline = $current_application_deadline ? date('m/d/Y', strtotime($c
 
 $admins = [];
 try {
-    $stmt = $pdo->prepare("SELECT id, firstname, lastname, middlename, contact_no, email FROM users WHERE role = 'Admin'");
+    $stmt = $pdo->prepare("
+        SELECT u.id, u.firstname, u.lastname, u.middlename, u.contact_no, u.email, u.program_id,
+               sp.program_name
+        FROM users u
+        LEFT JOIN scholarship_programs sp ON u.program_id = sp.id
+        WHERE u.role = 'Admin'
+    ");
     $stmt->execute();
     $admins = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $_SESSION['admin_list_error'] = "Error fetching admins: " . $e->getMessage();
+}
+
+// Fetch all scholarship programs
+$scholarship_programs = [];
+try {
+    $stmt = $pdo->prepare("SELECT id, program_name, program_description, is_active FROM scholarship_programs WHERE is_active = 1 ORDER BY program_name");
+    $stmt->execute();
+    $scholarship_programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $_SESSION['programs_error'] = "Error fetching programs: " . $e->getMessage();
 }
 
 // Fetch all applicants for the modals
@@ -313,9 +329,11 @@ $all_applicants = [];
 try {
     $stmt = $pdo->prepare("
         SELECT u.id, u.firstname, u.lastname, u.middlename, u.contact_no, u.email,
-               ui.application_status, ui.claim_status, ui.municipality
+               ui.application_status, ui.claim_status, ui.municipality, ui.program_id,
+               sp.program_name
         FROM users u
         LEFT JOIN users_info ui ON u.id = ui.user_id
+        LEFT JOIN scholarship_programs sp ON ui.program_id = sp.id
         WHERE u.role = 'Applicant'
     ");
     $stmt->execute();
@@ -407,11 +425,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register_admin'])) {
     $email = trim($_POST['email']);
     $password = trim($_POST['password']);
     $confirm_password = trim($_POST['confirm_password']);
+    $program_id = !empty($_POST['program_id']) ? intval($_POST['program_id']) : null;
 
     $register_error = '';
 
     if ($password !== $confirm_password) {
         $register_error = "Passwords do not match.";
+    }
+
+    if (empty($program_id)) {
+        $register_error = "Please select a scholarship program for this admin.";
     }
 
     $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
@@ -427,11 +450,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register_admin'])) {
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("
                 INSERT INTO users (
-                    firstname, lastname, middlename, contact_no, email, password, role
-                ) VALUES (?, ?, ?, ?, ?, ?, 'Admin')
+                    firstname, lastname, middlename, contact_no, email, password, role, program_id
+                ) VALUES (?, ?, ?, ?, ?, ?, 'Admin', ?)
             ");
             $stmt->execute([
-                $firstname, $lastname, $middlename, $contact_no, $email, $hashed_password
+                $firstname, $lastname, $middlename, $contact_no, $email, $hashed_password, $program_id
             ]);
 
             $pdo->commit();
@@ -456,6 +479,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_admin'])) {
     $middlename = trim($_POST['middlename']);
     $contact_no = trim($_POST['contact_no']);
     $email = trim($_POST['email']);
+    $program_id = !empty($_POST['program_id']) ? intval($_POST['program_id']) : null;
 
     $update_error = '';
 
@@ -465,14 +489,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_admin'])) {
         $update_error = "Email is already registered.";
     }
 
+    if (empty($program_id)) {
+        $update_error = "Please select a scholarship program for this admin.";
+    }
+
     if (empty($update_error)) {
         try {
             $stmt = $pdo->prepare("
                 UPDATE users 
-                SET firstname = ?, lastname = ?, middlename = ?, contact_no = ?, email = ? 
+                SET firstname = ?, lastname = ?, middlename = ?, contact_no = ?, email = ?, program_id = ? 
                 WHERE id = ? AND role = 'Admin'
             ");
-            $stmt->execute([$firstname, $lastname, $middlename, $contact_no, $email, $admin_id]);
+            $stmt->execute([$firstname, $lastname, $middlename, $contact_no, $email, $program_id, $admin_id]);
             $_SESSION['admin_update_success'] = "Admin updated successfully!";
         } catch (PDOException $e) {
             $update_error = "Update failed: " . $e->getMessage();
@@ -1161,8 +1189,9 @@ unset($_SESSION['announcement_error']);
         }
 
         .form-control {
-            background: rgba(255, 255, 255, 0.9);
-            border: 2px solid rgba(255, 255, 255, 0.1);
+            background: rgba(15, 23, 42, 0.6) !important;
+            color: var(--text-bright) !important;
+            border: 2px solid var(--border-color);
             color: var(--text-color);
             font-size: 1rem;
             padding: 0.75rem 1rem 0.75rem 2.5rem;
@@ -1172,9 +1201,10 @@ unset($_SESSION['announcement_error']);
         }
 
         .form-control:focus {
-            background: white;
-            border-color: rgba(255, 255, 255, 0.5);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
         }
 
         .submit-btn {
@@ -1301,7 +1331,8 @@ unset($_SESSION['announcement_error']);
             outline: none;
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-            background: rgba(15, 23, 42, 0.8);
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
             transform: translateY(-2px);
         }
 
@@ -1313,17 +1344,141 @@ unset($_SESSION['announcement_error']);
             opacity: 0.7;
         }
 
+        /* Override browser autofill styles to maintain dark theme */
+        .form-control:-webkit-autofill,
+        .form-control:-webkit-autofill:hover,
+        .form-control:-webkit-autofill:focus,
+        .form-control:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 30px rgba(15, 23, 42, 0.8) inset !important;
+            -webkit-text-fill-color: var(--text-bright) !important;
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+            caret-color: var(--text-bright) !important;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+
+        /* For Firefox autofill */
+        .form-control:-moz-autofill {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
+        /* Ensure input text color stays white when typing */
+        .form-control:not(:placeholder-shown) {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
+        /* For all input types */
+        input.form-control,
+        input[type="text"].form-control,
+        input[type="email"].form-control,
+        input[type="tel"].form-control,
+        input[type="number"].form-control,
+        input[type="date"].form-control,
+        input[type="password"].form-control {
+            background: rgba(15, 23, 42, 0.6) !important;
+            color: var(--text-bright) !important;
+        }
+
+        input.form-control:focus,
+        input[type="text"].form-control:focus,
+        input[type="email"].form-control:focus,
+        input[type="tel"].form-control:focus,
+        input[type="number"].form-control:focus,
+        input[type="date"].form-control:focus,
+        input[type="password"].form-control:focus {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
         select.form-control {
             appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background: rgba(15, 23, 42, 0.6);
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23cbd5e1' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
             background-position: right 1rem center;
             padding-right: 2.5rem;
             cursor: pointer;
+            position: relative;
+            z-index: 1;
+            color: var(--text-bright);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
         }
 
         select.form-control:focus {
+            background: rgba(15, 23, 42, 0.8);
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236366f1' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            transform: translateY(-2px);
+            z-index: 10;
+        }
+
+        select.form-control:hover {
+            border-color: var(--border-hover);
+        }
+
+        /* Style dropdown options to match dark theme */
+        select.form-control option {
+            background-color: #1e1b4b;
+            color: var(--text-bright);
+            padding: 0.75rem 1rem;
+            border: none;
+            font-size: 1rem;
+        }
+
+        select.form-control option:hover {
+            background-color: var(--primary-color);
+            color: var(--text-bright);
+        }
+
+        select.form-control option:checked,
+        select.form-control option:focus {
+            background-color: var(--primary-color);
+            color: var(--text-bright);
+        }
+
+        select.form-control option:disabled {
+            color: var(--text-muted);
+            background-color: rgba(15, 23, 42, 0.4);
+        }
+
+        /* Contain select dropdowns within their form groups */
+        .form-group {
+            position: relative;
+            overflow: visible;
+            isolation: isolate;
+        }
+
+        .form-group select.form-control {
+            position: relative;
+            z-index: 1;
+        }
+
+        .form-group:focus-within {
+            z-index: 10;
+        }
+
+        .form-group:focus-within select.form-control {
+            z-index: 10;
+            position: relative;
+        }
+
+        .input-group {
+            position: relative;
+            overflow: visible;
+            isolation: isolate;
+        }
+
+        select.form-control::-ms-expand {
+            display: none;
         }
 
         textarea.form-control {
@@ -1950,7 +2105,8 @@ unset($_SESSION['announcement_error']);
         .form-control:focus {
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-            background: rgba(15, 23, 42, 0.8);
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
             transform: translateY(-2px);
         }
 
@@ -1960,6 +2116,29 @@ unset($_SESSION['announcement_error']);
             color: var(--text-muted);
             cursor: not-allowed;
             opacity: 0.7;
+        }
+
+        /* Override browser autofill styles to maintain dark theme */
+        #editAdminForm .form-control:-webkit-autofill,
+        #editAdminForm .form-control:-webkit-autofill:hover,
+        #editAdminForm .form-control:-webkit-autofill:focus,
+        #editAdminForm .form-control:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 30px rgba(15, 23, 42, 0.8) inset !important;
+            -webkit-text-fill-color: var(--text-bright) !important;
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+            caret-color: var(--text-bright) !important;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+
+        #editAdminForm .form-control:-moz-autofill {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
+        #editAdminForm .form-control:not(:placeholder-shown) {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
         }
 
         .password-group .password-toggle {
@@ -2309,8 +2488,9 @@ unset($_SESSION['announcement_error']);
         }
 
         #editAdminForm .form-control {
-            background: #fff;
-            border: 1px solid #e5e7eb;
+            background: rgba(15, 23, 42, 0.6) !important;
+            color: var(--text-bright) !important;
+            border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 0.75rem 1rem;
             width: 100%;
@@ -2430,8 +2610,9 @@ unset($_SESSION['announcement_error']);
         }
 
         #editAdminForm .form-control {
-            background: #fff;
-            border: 1px solid #e5e7eb;
+            background: rgba(15, 23, 42, 0.6) !important;
+            color: var(--text-bright) !important;
+            border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 0.75rem 1rem 0.75rem 2.5rem;
             width: 100%;
@@ -2741,17 +2922,80 @@ unset($_SESSION['announcement_error']);
             <div class="admin-form" id="analyticsSection" style="display: none;">
                 <div class="page-header">
                     <h2><i class="fas fa-chart-line"></i> Predictive Analytics</h2>
-                    <p>Forecast scholarship trends and applicant success rates</p>
+                    <p>Forecast scholarship trends and applicant success rates across all programs</p>
                 </div>
                 
+                <!-- Program Trends Analysis -->
                 <div class="form-section">
-                    <h3><i class="fas fa-chart-bar"></i> Scholarship Trends Analysis</h3>
+                    <h3><i class="fas fa-university"></i> Program Performance Overview</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 1rem;">Compare performance across all scholarship programs</p>
+                    <div id="program-trends-loading" class="loading-message" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i> Analyzing program trends...
+                    </div>
+                    <div id="program-trends-results" class="analytics-results">
+                        <div class="analytics-placeholder">
+                            <p>Click "Analyze Program Trends" to view performance across all scholarship programs.</p>
+                        </div>
+                    </div>
+                    <button id="analyze-program-trends-btn" class="submit-btn" onclick="analyzeProgramTrends()">
+                        <i class="fas fa-chart-pie"></i> Analyze Program Trends
+                    </button>
+                </div>
+                
+                <!-- Program Comparison -->
+                <div class="form-section">
+                    <h3><i class="fas fa-balance-scale"></i> Program Comparison</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 1rem;">Compare specific programs side by side</p>
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label for="compare-programs-select"><i class="fas fa-graduation-cap"></i> Select Programs to Compare</label>
+                        <div class="input-group">
+                            <i class="fas fa-graduation-cap"></i>
+                            <select id="compare-programs-select" class="form-control" multiple style="min-height: 100px;">
+                                <?php foreach ($scholarship_programs as $program): ?>
+                                    <option value="<?php echo htmlspecialchars($program['id']); ?>">
+                                        <?php echo htmlspecialchars($program['program_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <small style="color: var(--text-muted);">Hold Ctrl/Cmd to select multiple programs</small>
+                    </div>
+                    <div id="program-comparison-loading" class="loading-message" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i> Comparing programs...
+                    </div>
+                    <div id="program-comparison-results" class="analytics-results">
+                        <div class="analytics-placeholder">
+                            <p>Select programs above and click "Compare Programs" to view side-by-side comparison.</p>
+                        </div>
+                    </div>
+                    <button id="compare-programs-btn" class="submit-btn" onclick="comparePrograms()">
+                        <i class="fas fa-balance-scale"></i> Compare Programs
+                    </button>
+                </div>
+                
+                <!-- Municipality Trends (with program filter) -->
+                <div class="form-section">
+                    <h3><i class="fas fa-chart-bar"></i> Municipality Trends Analysis</h3>
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label for="trends-program-filter"><i class="fas fa-filter"></i> Filter by Program (Optional)</label>
+                        <div class="input-group">
+                            <i class="fas fa-filter"></i>
+                            <select id="trends-program-filter" class="form-control">
+                                <option value="">All Programs</option>
+                                <?php foreach ($scholarship_programs as $program): ?>
+                                    <option value="<?php echo htmlspecialchars($program['id']); ?>">
+                                        <?php echo htmlspecialchars($program['program_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
                     <div id="trends-loading" class="loading-message" style="display: none;">
                         <i class="fas fa-spinner fa-spin"></i> Analyzing scholarship trends...
                     </div>
                     <div id="trends-results" class="analytics-results">
                         <div class="analytics-placeholder">
-                            <p>Click "Analyze Trends" to generate scholarship trends analysis.</p>
+                            <p>Click "Analyze Trends" to generate scholarship trends analysis by municipality.</p>
                         </div>
                     </div>
                     <button id="analyze-trends-btn" class="submit-btn" onclick="analyzeScholarshipTrends()">
@@ -2759,8 +3003,23 @@ unset($_SESSION['announcement_error']);
                     </button>
                 </div>
                 
+                <!-- Applicant Success Predictions (with program filter) -->
                 <div class="form-section">
                     <h3><i class="fas fa-user-graduate"></i> Applicant Success Predictions</h3>
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label for="predictions-program-filter"><i class="fas fa-filter"></i> Filter by Program (Optional)</label>
+                        <div class="input-group">
+                            <i class="fas fa-filter"></i>
+                            <select id="predictions-program-filter" class="form-control">
+                                <option value="">All Programs</option>
+                                <?php foreach ($scholarship_programs as $program): ?>
+                                    <option value="<?php echo htmlspecialchars($program['id']); ?>">
+                                        <?php echo htmlspecialchars($program['program_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
                     <div id="predictions-loading" class="loading-message" style="display: none;">
                         <i class="fas fa-spinner fa-spin"></i> Predicting applicant success rates...
                     </div>
@@ -2774,8 +3033,23 @@ unset($_SESSION['announcement_error']);
                     </button>
                 </div>
                 
+                <!-- Recommendations (with program filter) -->
                 <div class="form-section">
-                    <h3><i class="fas fa-lightbulb"></i> Recommendations</h3>
+                    <h3><i class="fas fa-lightbulb"></i> AI Recommendations</h3>
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label for="recommendations-program-filter"><i class="fas fa-filter"></i> Filter by Program (Optional)</label>
+                        <div class="input-group">
+                            <i class="fas fa-filter"></i>
+                            <select id="recommendations-program-filter" class="form-control">
+                                <option value="">All Programs</option>
+                                <?php foreach ($scholarship_programs as $program): ?>
+                                    <option value="<?php echo htmlspecialchars($program['id']); ?>">
+                                        <?php echo htmlspecialchars($program['program_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
                     <div id="recommendations-loading" class="loading-message" style="display: none;">
                         <i class="fas fa-spinner fa-spin"></i> Generating recommendations...
                     </div>
@@ -2844,6 +3118,22 @@ unset($_SESSION['announcement_error']);
                         </div>
                         <div class="form-row">
                             <div class="form-group">
+                            <label for="program_id"><i class="fas fa-graduation-cap"></i> Scholarship Program <span class="required">*</span></label>
+                                <div class="input-group">
+                                    <i class="fas fa-graduation-cap"></i>
+                                <select id="program_id" name="program_id" class="form-control" required>
+                                    <option value="">Select a program</option>
+                                    <?php foreach ($scholarship_programs as $program): ?>
+                                        <option value="<?php echo htmlspecialchars($program['id']); ?>">
+                                            <?php echo htmlspecialchars($program['program_name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
                             <label for="password"><i class="fas fa-lock"></i> Password <span class="required">*</span></label>
                                 <div class="input-group password-group">
                                     <i class="fas fa-lock"></i>
@@ -2882,20 +3172,21 @@ unset($_SESSION['announcement_error']);
                 <div class="section">
                 <div class="table-container">
                     <table>
-                        <thead>
+                                <thead>
                             <tr>
                                     <th><i class="fas fa-user"></i> Firstname</th>
                                     <th><i class="fas fa-user"></i> Lastname</th>
                                     <th><i class="fas fa-user"></i> Middlename</th>
                                     <th><i class="fas fa-phone"></i> Contact Number</th>
                                     <th><i class="fas fa-envelope"></i> Email</th>
+                                    <th><i class="fas fa-graduation-cap"></i> Program</th>
                                     <th><i class="fas fa-cog"></i> Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($admins)): ?>
                                 <tr>
-                                    <td colspan="6" style="text-align: center;">No Admins found.</td>
+                                    <td colspan="7" style="text-align: center;">No Admins found.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($admins as $admin): ?>
@@ -2905,9 +3196,10 @@ unset($_SESSION['announcement_error']);
                                         <td><?php echo htmlspecialchars($admin['middlename'] ?: '-'); ?></td>
                                         <td><?php echo htmlspecialchars($admin['contact_no']); ?></td>
                                         <td><?php echo htmlspecialchars($admin['email']); ?></td>
+                                        <td><?php echo htmlspecialchars($admin['program_name'] ?: 'Not Assigned'); ?></td>
                                         <td>
                                             <div class="action-buttons">
-                                                    <button class="edit-btn" onclick="showEditForm('<?php echo $admin['id']; ?>', '<?php echo htmlspecialchars(addslashes($admin['firstname'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['lastname'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['middlename'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['contact_no'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['email'])); ?>')">
+                                                    <button class="edit-btn" onclick="showEditForm('<?php echo $admin['id']; ?>', '<?php echo htmlspecialchars(addslashes($admin['firstname'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['lastname'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['middlename'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['contact_no'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['email'])); ?>', '<?php echo htmlspecialchars(addslashes($admin['program_id'] ?: '')); ?>')">
                                                         <i class="fas fa-edit"></i>
                                                         <span>Edit</span>
                                                     </button>
@@ -2968,6 +3260,22 @@ unset($_SESSION['announcement_error']);
                                         <div class="input-group">
                                             <i class="fas fa-envelope"></i>
                                 <input type="email" id="edit-email" name="email" class="form-control" required>
+                                    </div>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                    <label for="edit-program_id"><i class="fas fa-graduation-cap"></i> Scholarship Program <span class="required">*</span></label>
+                                        <div class="input-group">
+                                            <i class="fas fa-graduation-cap"></i>
+                                <select id="edit-program_id" name="program_id" class="form-control" required>
+                                    <option value="">Select a program</option>
+                                    <?php foreach ($scholarship_programs as $program): ?>
+                                        <option value="<?php echo htmlspecialchars($program['id']); ?>">
+                                            <?php echo htmlspecialchars($program['program_name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                                     </div>
                                     </div>
                                 </div>
@@ -3227,7 +3535,7 @@ unset($_SESSION['announcement_error']);
             hideAllEditForms();
         }
 
-        function showEditForm(adminId, firstname, lastname, middlename, contact_no, email) {
+        function showEditForm(adminId, firstname, lastname, middlename, contact_no, email, programId) {
             hideAllEditForms();
             document.getElementById('editAdminForm').style.display = 'block';
             document.getElementById('edit-admin-id').value = adminId;
@@ -3236,6 +3544,7 @@ unset($_SESSION['announcement_error']);
             document.getElementById('edit-middlename').value = middlename;
             document.getElementById('edit-contact_no').value = contact_no;
             document.getElementById('edit-email').value = email;
+            document.getElementById('edit-program_id').value = programId || '';
         }
 
         function hideAllEditForms() {
@@ -3402,28 +3711,29 @@ unset($_SESSION['announcement_error']);
             showAnalytics();
             
             // Check if any analytics sections need initial data
+            const programTrendsResults = document.getElementById('program-trends-results');
             const trendsResults = document.getElementById('trends-results');
             const predictionsResults = document.getElementById('predictions-results');
             const recommendationsResults = document.getElementById('recommendations-results');
             
-            // If all sections are showing placeholders, auto-load one section
+            // If all sections are showing placeholders, auto-load program trends
+            const programTrendsHasPlaceholder = programTrendsResults.querySelector('.analytics-placeholder');
             const trendsHasPlaceholder = trendsResults.querySelector('.analytics-placeholder');
             const predictionsHasPlaceholder = predictionsResults.querySelector('.analytics-placeholder');
             const recommendationsHasPlaceholder = recommendationsResults.querySelector('.analytics-placeholder');
             
-            if (trendsHasPlaceholder && predictionsHasPlaceholder && recommendationsHasPlaceholder) {
-                // Auto-load trends analysis
-                analyzeScholarshipTrends();
+            if (programTrendsHasPlaceholder && trendsHasPlaceholder && predictionsHasPlaceholder && recommendationsHasPlaceholder) {
+                // Auto-load program trends analysis
+                analyzeProgramTrends();
             }
         }
 
-        // Analyze scholarship trends
-        function analyzeScholarshipTrends() {
-            const loadingElement = document.getElementById('trends-loading');
-            const resultsElement = document.getElementById('trends-results');
-            const button = document.getElementById('analyze-trends-btn');
+        // Analyze program trends
+        function analyzeProgramTrends() {
+            const loadingElement = document.getElementById('program-trends-loading');
+            const resultsElement = document.getElementById('program-trends-results');
+            const button = document.getElementById('analyze-program-trends-btn');
             
-            // Show loading, but keep existing results visible
             loadingElement.style.display = 'block';
             resultsElement.classList.add('loading-overlay');
             button.disabled = true;
@@ -3433,7 +3743,178 @@ unset($_SESSION['announcement_error']);
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: 'action=get_scholarship_trends'
+                body: 'action=get_program_trends'
+            })
+            .then(response => {
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Response is not JSON: ' + contentType);
+                }
+                return response.json();
+            })
+            .then(data => {
+                loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
+                button.disabled = false;
+                
+                if (data.success) {
+                    let html = '<div class="analytics-results-content">';
+                    html += '<h4>Scholarship Programs Performance</h4>';
+                    html += '<div class="trends-grid">';
+                    
+                    for (const programName in data.data) {
+                        const stats = data.data[programName];
+                        const performanceClass = stats.performance === 'excellent' ? 'trend-increasing' : 
+                                               stats.performance === 'good' ? 'trend-stable' : 
+                                               stats.performance === 'fair' ? 'trend-decreasing' : 'trend-decreasing';
+                        
+                        html += `
+                            <div class="trend-card">
+                                <div class="trend-card-header">
+                                    <h5 class="trend-card-title">${programName}</h5>
+                                </div>
+                                <div class="trend-stats">
+                                    <p>Total Applicants: <strong>${stats.total_applicants}</strong></p>
+                                    <p>Approved: <strong>${stats.total_approved}</strong></p>
+                                    <p>Denied: <strong>${stats.total_denied}</strong></p>
+                                    <p>Under Review: <strong>${stats.under_review}</strong></p>
+                                    <p>Approval Rate: <strong>${stats.approval_rate}%</strong></p>
+                                    <p>Performance: <strong class="${performanceClass}">${stats.performance.replace('_', ' ').toUpperCase()}</strong></p>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    html += '</div>';
+                    html += `<p class="analysis-date">Analysis generated on: ${data.generated_at}</p>`;
+                    html += '</div>';
+                    resultsElement.innerHTML = html;
+                } else {
+                    if (!resultsElement.querySelector('.analytics-results-content')) {
+                        resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                    }
+                }
+            })
+            .catch(error => {
+                loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
+                button.disabled = false;
+                console.error('Analytics Error:', error);
+                if (!resultsElement.querySelector('.analytics-results-content')) {
+                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to analyze program trends'}</div>`;
+                }
+            });
+        }
+        
+        // Compare programs
+        function comparePrograms() {
+            const selectElement = document.getElementById('compare-programs-select');
+            const selectedPrograms = Array.from(selectElement.selectedOptions).map(opt => opt.value);
+            
+            if (selectedPrograms.length === 0) {
+                alert('Please select at least one program to compare.');
+                return;
+            }
+            
+            const loadingElement = document.getElementById('program-comparison-loading');
+            const resultsElement = document.getElementById('program-comparison-results');
+            const button = document.getElementById('compare-programs-btn');
+            
+            loadingElement.style.display = 'block';
+            resultsElement.classList.add('loading-overlay');
+            button.disabled = true;
+            
+            const formData = new URLSearchParams();
+            formData.append('action', 'compare_programs');
+            formData.append('program_ids', JSON.stringify(selectedPrograms));
+            
+            fetch('ajax_analytics_handler.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData
+            })
+            .then(response => {
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Response is not JSON: ' + contentType);
+                }
+                return response.json();
+            })
+            .then(data => {
+                loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
+                button.disabled = false;
+                
+                if (data.success) {
+                    let html = '<div class="analytics-results-content">';
+                    html += '<h4>Program Comparison</h4>';
+                    html += '<div class="trends-grid">';
+                    
+                    for (const programName in data.programs) {
+                        const program = data.programs[programName];
+                        html += `
+                            <div class="trend-card">
+                                <div class="trend-card-header">
+                                    <h5 class="trend-card-title">${programName}</h5>
+                                </div>
+                                <div class="trend-stats">
+                                    <p><strong>Description:</strong> ${program.program_description || 'N/A'}</p>
+                                    <p>Total Applicants: <strong>${program.total_applicants}</strong></p>
+                                    <p>Approved: <strong>${program.approved}</strong> (${program.approval_rate}%)</p>
+                                    <p>Denied: <strong>${program.denied}</strong> (${program.denial_rate}%)</p>
+                                    <p>Under Review: <strong>${program.under_review}</strong></p>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    html += '</div>';
+                    html += `<p class="analysis-date">Comparison generated on: ${data.generated_at}</p>`;
+                    html += '</div>';
+                    resultsElement.innerHTML = html;
+                } else {
+                    if (!resultsElement.querySelector('.analytics-results-content')) {
+                        resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+                    }
+                }
+            })
+            .catch(error => {
+                loadingElement.style.display = 'none';
+                resultsElement.classList.remove('loading-overlay');
+                button.disabled = false;
+                console.error('Analytics Error:', error);
+                if (!resultsElement.querySelector('.analytics-results-content')) {
+                    resultsElement.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Error: ${error.message || 'Failed to compare programs'}</div>`;
+                }
+            });
+        }
+        
+        // Analyze scholarship trends
+        function analyzeScholarshipTrends() {
+            const loadingElement = document.getElementById('trends-loading');
+            const resultsElement = document.getElementById('trends-results');
+            const button = document.getElementById('analyze-trends-btn');
+            const programFilter = document.getElementById('trends-program-filter').value;
+            
+            // Show loading, but keep existing results visible
+            loadingElement.style.display = 'block';
+            resultsElement.classList.add('loading-overlay');
+            button.disabled = true;
+            
+            const formData = new URLSearchParams();
+            formData.append('action', 'get_scholarship_trends');
+            if (programFilter) {
+                formData.append('program_id', programFilter);
+            }
+            
+            fetch('ajax_analytics_handler.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData
             })
             .then(response => {
                 // Check if response is actually JSON
@@ -3517,18 +3998,25 @@ unset($_SESSION['announcement_error']);
             const loadingElement = document.getElementById('predictions-loading');
             const resultsElement = document.getElementById('predictions-results');
             const button = document.getElementById('predict-applicants-btn');
+            const programFilter = document.getElementById('predictions-program-filter').value;
             
             // Show loading, but keep existing results visible
             loadingElement.style.display = 'block';
             resultsElement.classList.add('loading-overlay');
             button.disabled = true;
             
+            const formData = new URLSearchParams();
+            formData.append('action', 'get_applicant_predictions');
+            if (programFilter) {
+                formData.append('program_id', programFilter);
+            }
+            
             fetch('ajax_analytics_handler.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: 'action=get_applicant_predictions'
+                body: formData
             })
             .then(response => {
                 // Check if response is actually JSON
@@ -3550,6 +4038,8 @@ unset($_SESSION['announcement_error']);
                     
                     // Success factors by category
                     for (const factor in data.success_factors) {
+                        if (Object.keys(data.success_factors[factor]).length === 0) continue;
+                        
                         html += `<h5>${factor.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} Success Rates</h5>`;
                         html += '<div class="factors-grid">';
                         
@@ -3617,18 +4107,25 @@ unset($_SESSION['announcement_error']);
             const loadingElement = document.getElementById('recommendations-loading');
             const resultsElement = document.getElementById('recommendations-results');
             const button = document.getElementById('generate-recommendations-btn');
+            const programFilter = document.getElementById('recommendations-program-filter').value;
             
             // Show loading, but keep existing results visible
             loadingElement.style.display = 'block';
             resultsElement.classList.add('loading-overlay');
             button.disabled = true;
             
+            const formData = new URLSearchParams();
+            formData.append('action', 'get_recommendations');
+            if (programFilter) {
+                formData.append('program_id', programFilter);
+            }
+            
             fetch('ajax_analytics_handler.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: 'action=get_recommendations'
+                body: formData
             })
             .then(response => {
                 // Check if response is actually JSON

@@ -23,18 +23,32 @@ try {
         
         switch ($action) {
             case 'get_scholarship_trends':
-                $result = $analytics->analyzeScholarshipTrends();
+                $programId = !empty($_POST['program_id']) ? intval($_POST['program_id']) : null;
+                $result = $analytics->analyzeScholarshipTrends($programId);
+                echo json_encode($result);
+                break;
+                
+            case 'get_program_trends':
+                $result = $analytics->analyzeProgramTrends();
+                echo json_encode($result);
+                break;
+                
+            case 'compare_programs':
+                $programIds = !empty($_POST['program_ids']) ? json_decode($_POST['program_ids'], true) : [];
+                $result = $analytics->comparePrograms($programIds);
                 echo json_encode($result);
                 break;
                 
             case 'get_applicant_predictions':
                 $applicantId = $_POST['applicant_id'] ?? null;
-                $result = $analytics->predictApplicantSuccess($applicantId);
+                $programId = !empty($_POST['program_id']) ? intval($_POST['program_id']) : null;
+                $result = $analytics->predictApplicantSuccess($applicantId, $programId);
                 echo json_encode($result);
                 break;
                 
             case 'get_recommendations':
-                $result = $analytics->generateRecommendations();
+                $programId = !empty($_POST['program_id']) ? intval($_POST['program_id']) : null;
+                $result = $analytics->generateRecommendations($programId);
                 echo json_encode($result);
                 break;
                 

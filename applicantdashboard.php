@@ -115,8 +115,40 @@ try {
 
 $formatted_deadline = $application_deadline ? date('m/d/Y', strtotime($application_deadline)) : 'Not Set';
 
+// Fetch all active scholarship programs
+$scholarship_programs = [];
+try {
+    $stmt = $pdo->prepare("SELECT id, program_name, program_description FROM scholarship_programs WHERE is_active = 1 ORDER BY program_name");
+    $stmt->execute();
+    $scholarship_programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Error fetching programs: " . $e->getMessage());
+}
+
+// Get user's current program_id if they already have an application
+$user_program_id = null;
+try {
+    $stmt = $pdo->prepare("SELECT program_id FROM users_info WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($result && $result['program_id']) {
+        $user_program_id = $result['program_id'];
+    }
+} catch (PDOException $e) {
+    error_log("Error fetching user program: " . $e->getMessage());
+}
+
 // Handle Form Submission
 if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_application'])) {
+    // Program Selection
+    $program_id = !empty($_POST['program_id']) ? intval($_POST['program_id']) : null;
+    
+    if (empty($program_id)) {
+        $_SESSION['application_error'] = "Please select a scholarship program.";
+        header('Location: applicantdashboard.php?view=Application');
+        exit;
+    }
+    
     // Personal Information
     $lastname = trim($_POST['lastname'] ?? '');
     $firstname = trim($_POST['firstname'] ?? '');
@@ -298,12 +330,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 $stmt = $pdo->prepare("
                     UPDATE users_info
                     SET sex = ?, civil_status = ?, birthdate = ?, municipality = ?, barangay = ?, 
-                        place_of_birth = ?, application_status = ?
+                        place_of_birth = ?, application_status = ?, program_id = ?
                     WHERE user_id = ?
                 ");
                 $stmt->execute([
                     $sex, $civil_status, $birthdate, $municipality, $barangay, 
-                    $place_of_birth, 'Under Review', $user_id
+                    $place_of_birth, 'Under Review', $program_id, $user_id
                 ]);
 
                 // Update user_personal
@@ -420,12 +452,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 $stmt = $pdo->prepare("
                     INSERT INTO users_info (
                         user_id, municipality, barangay, sex, civil_status,
-                        birthdate, place_of_birth
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        birthdate, place_of_birth, program_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $user_id, $municipality, $barangay, $sex, $civil_status,
-                    $birthdate, $place_of_birth
+                    $birthdate, $place_of_birth, $program_id
                 ]);
 
                 // Insert into user_personal
@@ -939,8 +971,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         <!-- Form Section -->
         <form id="applicationFormContent" method="POST" enctype="multipart/form-data">
+            <!-- Step 0: Program Selection -->
+            <div class="form-section" id="step0" style="display: none;">
+                <h3>Select Scholarship Program</h3>
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="program_id">Scholarship Program <span class="required">*</span></label>
+                        <div class="input-group">
+                            <i class="fas fa-graduation-cap"></i>
+                            <select id="program_id" name="program_id" class="form-control" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                                <option value="">Select a scholarship program</option>
+                                <?php foreach ($scholarship_programs as $program): ?>
+                                    <option value="<?php echo htmlspecialchars($program['id']); ?>" 
+                                        <?php echo ($user_program_id == $program['id']) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($program['program_name']); ?>
+                                        <?php if (!empty($program['program_description'])): ?>
+                                            - <?php echo htmlspecialchars($program['program_description']); ?>
+                                        <?php endif; ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <p style="margin-top: 10px; color: #666; font-size: 14px;">
+                            Please select the scholarship program you wish to apply for. Each program may have different requirements.
+                        </p>
+                        <?php if ($has_application && $user_program_id): ?>
+                        <div style="margin-top: 15px; padding: 12px; background-color: #e0f2fe; border-left: 4px solid #0284c7; border-radius: 4px;">
+                            <p style="margin: 0; color: #0369a1; font-size: 14px;">
+                                <strong>Current Selection:</strong> You are currently applying for 
+                                <strong><?php 
+                                    $current_program = array_filter($scholarship_programs, function($p) use ($user_program_id) { 
+                                        return $p['id'] == $user_program_id; 
+                                    });
+                                    if (!empty($current_program)) {
+                                        echo htmlspecialchars(reset($current_program)['program_name']);
+                                    }
+                                ?></strong>
+                            </p>
+                            <p style="margin: 5px 0 0 0; color: #0369a1; font-size: 13px;">
+                                You can change your selection below if needed.
+                            </p>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <!-- Program Requirements Display -->
+                        <div id="program-requirements" class="program-requirements-container" style="display: none;">
+                            <h4 class="program-requirements-header">
+                                <i class="fas fa-list-check"></i> Program Requirements
+                            </h4>
+                            <div id="requirements-list" class="program-requirements-list">
+                                <!-- Requirements will be loaded here via JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-buttons">
+                    <button type="button" class="next-btn" onclick="nextStep(0)">Next: Personal Information</button>
+                </div>
+            </div>
+            
             <!-- Step 1: Personal Information -->
-            <div class="form-section" id="step1">
+            <div class="form-section" id="step1" style="display: none;">
                 <h3>Personal Information</h3>
                 <div class="form-row">
                     <div class="form-group">
@@ -1612,7 +1703,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 </div>
 
 <script>
-    let currentStep = 1;
+    let currentStep = 0;
 
     function showStep(step) {
         document.querySelectorAll('.form-section').forEach(section => {
@@ -1620,9 +1711,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         });
         document.getElementById(`step${step}`).style.display = 'block';
 
-        document.querySelectorAll('.progress-step').forEach((stepElement, index) => {
-            stepElement.classList.toggle('active', index + 1 <= step);
-        });
+        // Update progress bar (step 0 is before the progress bar, steps 1-5 are shown)
+        if (step > 0) {
+            document.querySelectorAll('.progress-step').forEach((stepElement, index) => {
+                stepElement.classList.toggle('active', index + 1 <= step);
+            });
+        }
 
         if (step === 5) {
             updateReviewSection();
@@ -1630,15 +1724,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         currentStep = step;
     }
+    
+    // Load program requirements when program is selected
+    // Note: showStep(0) will be called by showApplicationForm() when the form is displayed
+    const programSelect = document.getElementById('program_id');
+    const requirementsDiv = document.getElementById('program-requirements');
+    const requirementsList = document.getElementById('requirements-list');
+    
+    // Fetch and display requirements for selected program
+    function loadProgramRequirements(programId) {
+        if (!programId) {
+            if (requirementsDiv) requirementsDiv.style.display = 'none';
+            return;
+        }
+        
+        // Fetch requirements via AJAX
+        fetch('ajax_get_program_requirements.php?program_id=' + programId)
+            .then(response => response.json())
+            .then(data => {
+                if (!requirementsDiv || !requirementsList) return;
+                
+                if (data.success && data.requirements && data.requirements.length > 0) {
+                    // Deduplicate requirements by name to prevent any duplicates
+                    const uniqueReqs = [];
+                    const seenNames = new Set();
+                    
+                    data.requirements.forEach(req => {
+                        const name = req.requirement_name.toLowerCase().trim();
+                        if (!seenNames.has(name)) {
+                            seenNames.add(name);
+                            uniqueReqs.push(req);
+                        }
+                    });
+                    
+                    let html = '<ul class="requirements-ul">';
+                    uniqueReqs.forEach(req => {
+                        html += '<li class="requirement-item">';
+                        html += '<i class="fas fa-file-alt requirement-icon"></i>';
+                        html += '<div class="requirement-content">';
+                        html += '<strong class="requirement-name">' + escapeHtml(req.requirement_name) + '</strong>';
+                        if (req.requirement_description) {
+                            html += '<span class="requirement-desc">: ' + escapeHtml(req.requirement_description) + '</span>';
+                        }
+                        html += '</div>';
+                        html += '</li>';
+                    });
+                    html += '</ul>';
+                    requirementsList.innerHTML = html;
+                    requirementsDiv.style.display = 'block';
+                } else {
+                    // Default requirements if none found
+                    requirementsList.innerHTML = '<p class="requirements-default">Standard requirements apply: Certificate of Registration, Certificate of Indigency, and Voter\'s Certificate.</p>';
+                    requirementsDiv.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading requirements:', error);
+                if (!requirementsDiv || !requirementsList) return;
+                // Show default requirements on error
+                requirementsList.innerHTML = '<p class="requirements-default">Standard requirements apply: Certificate of Registration, Certificate of Indigency, and Voter\'s Certificate.</p>';
+                requirementsDiv.style.display = 'block';
+            });
+    
+    // Helper function to escape HTML
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    }
+    
+    // Load requirements when program selection changes
+    if (programSelect) {
+        programSelect.addEventListener('change', function() {
+            loadProgramRequirements(this.value);
+        });
+        
+        // Load requirements for initially selected program
+        if (programSelect.value) {
+            loadProgramRequirements(programSelect.value);
+        }
+    }
 
     function nextStep(current) {
+        // Validate program selection before proceeding from step 0
+        if (current === 0) {
+            const programSelect = document.getElementById('program_id');
+            if (!programSelect.value) {
+                showProgramSelectionModal();
+                return;
+            }
+        }
         if (current < 5) {
             showStep(current + 1);
         }
     }
+    
+    // Custom styled modal for program selection alert
+    function showProgramSelectionModal() {
+        const modal = document.getElementById('programSelectionModal');
+        if (modal) {
+            modal.style.display = 'flex';
+            // Focus the OK button for accessibility
+            const btn = modal.querySelector('.custom-modal-btn');
+            if (btn) {
+                setTimeout(() => btn.focus(), 100);
+            }
+        }
+    }
+    
+    function closeProgramSelectionModal() {
+        const modal = document.getElementById('programSelectionModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+    
+    // Close modal on Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeProgramSelectionModal();
+        }
+    });
 
     function prevStep(current) {
-        if (current > 1) {
+        if (current > 0) {
             showStep(current - 1);
         }
     }
@@ -1718,7 +1928,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         document.getElementById('applyLink').classList.add('active');
         document.getElementById('dashboardLink').classList.remove('active');
         document.getElementById('faqsLink').classList.remove('active');
-        showStep(1);
+        // Always start with Step 0 (Program Selection) so users can choose their scholarship program
+        showStep(0);
     }
 
     function showFAQs() {
@@ -2126,6 +2337,28 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <?php include 'chatbot.php'; ?>
+
+<!-- Custom Styled Modal for Program Selection Alert -->
+<div id="programSelectionModal" class="custom-modal" style="display: none;">
+    <div class="custom-modal-overlay" onclick="closeProgramSelectionModal()"></div>
+    <div class="custom-modal-content">
+        <div class="custom-modal-header">
+            <div class="custom-modal-icon">
+                <i class="fas fa-graduation-cap"></i>
+            </div>
+            <h3>Program Selection Required</h3>
+        </div>
+        <div class="custom-modal-body">
+            <p>Please select a scholarship program before proceeding to the next step.</p>
+            <p>Choose between <strong>EduKalinga</strong> or <strong>Handog Edukasyon</strong> to continue with your application.</p>
+        </div>
+        <div class="custom-modal-footer">
+            <button class="custom-modal-btn" onclick="closeProgramSelectionModal()">
+                <i class="fas fa-check"></i> OK, I Understand
+            </button>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>

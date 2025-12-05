@@ -193,9 +193,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset(
         ];
 
         try {
+            // Don't include user_id in INSERT since user doesn't exist yet
+            // user_id will be set later when OTP is verified and user account is created
             $stmt = $pdo->prepare("
-                INSERT INTO otp_verifications (email, otp, expires_at, user_id)
-                VALUES (?, ?, ?, NULL)
+                INSERT INTO otp_verifications (email, otp, expires_at)
+                VALUES (?, ?, ?)
             ");
             $stmt->execute([$email, $otp, $expires_at]);
             error_log("OTP stored successfully for email: $email, OTP: $otp, Expires At: $expires_at");
@@ -413,7 +415,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
     $email = $_POST['email'];
     $password = $_POST['password'];
 
-    $stmt = $pdo->prepare("SELECT id, firstname, lastname, middlename, role, password FROM users WHERE email = ?");
+    $stmt = $pdo->prepare("SELECT id, firstname, lastname, middlename, role, password, program_id FROM users WHERE email = ?");
     $stmt->execute([$email]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -426,6 +428,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
             $_SESSION['lastname'] = $user['lastname'];
             $_SESSION['middlename'] = $user['middlename'];
             $_SESSION['user_role'] = $user['role'];
+            $_SESSION['program_id'] = $user['program_id'] ?? null;
             $_SESSION['token'] = $token;
 
             if ($user['role'] === 'Applicant') {
@@ -719,8 +722,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             outline: none;
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-            background: rgba(15, 23, 42, 0.7);
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
             transform: translateY(-2px);
+        }
+
+        /* Override browser autofill styles to maintain dark theme */
+        .form-control:-webkit-autofill,
+        .form-control:-webkit-autofill:hover,
+        .form-control:-webkit-autofill:focus,
+        .form-control:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 30px rgba(15, 23, 42, 0.8) inset !important;
+            -webkit-text-fill-color: var(--text-bright) !important;
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+            caret-color: var(--text-bright) !important;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+
+        /* For Firefox autofill */
+        .form-control:-moz-autofill {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
+        /* Ensure input text color stays white when typing */
+        .form-control:not(:placeholder-shown) {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
+        /* For all input types */
+        input.form-control,
+        input[type="text"].form-control,
+        input[type="email"].form-control,
+        input[type="tel"].form-control,
+        input[type="number"].form-control,
+        input[type="date"].form-control,
+        input[type="password"].form-control {
+            background: rgba(15, 23, 42, 0.5) !important;
+            color: var(--text-bright) !important;
+        }
+
+        input.form-control:focus,
+        input[type="text"].form-control:focus,
+        input[type="email"].form-control:focus,
+        input[type="tel"].form-control:focus,
+        input[type="number"].form-control:focus,
+        input[type="date"].form-control:focus,
+        input[type="password"].form-control:focus {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
         }
 
         .toggle-password {
@@ -1040,6 +1092,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         select.form-control {
             appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background: rgba(15, 23, 42, 0.6);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23cbd5e1' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            padding-right: 2.5rem;
+            cursor: pointer;
+            position: relative;
+            z-index: 1;
+            color: var(--text-bright);
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+        }
+
+        select.form-control:focus {
+            background: rgba(15, 23, 42, 0.8);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236366f1' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            transform: translateY(-2px);
+            z-index: 10;
+        }
+
+        select.form-control:hover {
+            border-color: var(--border-hover);
+        }
+
+        /* Style dropdown options to match dark theme */
+        select.form-control option {
+            background-color: #1e1b4b;
+            color: var(--text-bright);
+            padding: 0.75rem 1rem;
+            border: none;
+            font-size: 1rem;
+        }
+
+        select.form-control option:hover {
+            background-color: var(--primary-color);
+            color: var(--text-bright);
+        }
+
+        select.form-control option:checked,
+        select.form-control option:focus {
+            background-color: var(--primary-color);
+            color: var(--text-bright);
+        }
+
+        select.form-control option:disabled {
+            color: var(--text-muted);
+            background-color: rgba(15, 23, 42, 0.4);
+        }
+
+        /* Contain select dropdowns within their form groups */
+        .form-group {
+            position: relative;
+            overflow: visible;
+            isolation: isolate;
+        }
+
+        .form-group select.form-control {
+            position: relative;
+            z-index: 1;
+        }
+
+        .form-group:focus-within {
+            z-index: 10;
+        }
+
+        .form-group:focus-within select.form-control {
+            z-index: 10;
+            position: relative;
+        }
+
+        .input-group {
+            position: relative;
+            overflow: visible;
+            isolation: isolate;
+        }
+
+        select.form-control::-ms-expand {
+            display: none;
+        }
+
+        select.form-control {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
             background-position: right 1rem center;

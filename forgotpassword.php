@@ -304,8 +304,57 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             outline: none;
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-            background: rgba(15, 23, 42, 0.8);
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
             transform: translateY(-2px);
+        }
+
+        /* Override browser autofill styles to maintain dark theme */
+        .form-control:-webkit-autofill,
+        .form-control:-webkit-autofill:hover,
+        .form-control:-webkit-autofill:focus,
+        .form-control:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 30px rgba(15, 23, 42, 0.8) inset !important;
+            -webkit-text-fill-color: var(--text-bright) !important;
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+            caret-color: var(--text-bright) !important;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+
+        /* For Firefox autofill */
+        .form-control:-moz-autofill {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
+        /* Ensure input text color stays white when typing */
+        .form-control:not(:placeholder-shown) {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
+        /* For all input types */
+        input.form-control,
+        input[type="text"].form-control,
+        input[type="email"].form-control,
+        input[type="tel"].form-control,
+        input[type="number"].form-control,
+        input[type="date"].form-control,
+        input[type="password"].form-control {
+            background: rgba(15, 23, 42, 0.5) !important;
+            color: var(--text-bright) !important;
+        }
+
+        input.form-control:focus,
+        input[type="text"].form-control:focus,
+        input[type="email"].form-control:focus,
+        input[type="tel"].form-control:focus,
+        input[type="number"].form-control:focus,
+        input[type="date"].form-control:focus,
+        input[type="password"].form-control:focus {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
         }
 
         .forgot-btn {

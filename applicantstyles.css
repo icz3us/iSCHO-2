@@ -903,7 +903,8 @@ body {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-    background: rgba(15, 23, 42, 0.8);
+    background: rgba(15, 23, 42, 0.8) !important;
+    color: var(--text-bright) !important;
     transform: translateY(-2px);
 }
 
@@ -913,6 +914,54 @@ body {
     color: var(--text-muted);
     cursor: not-allowed;
     opacity: 0.7;
+}
+
+/* Override browser autofill styles to maintain dark theme */
+.form-control:-webkit-autofill,
+.form-control:-webkit-autofill:hover,
+.form-control:-webkit-autofill:focus,
+.form-control:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px rgba(15, 23, 42, 0.8) inset !important;
+    -webkit-text-fill-color: var(--text-bright) !important;
+    background: rgba(15, 23, 42, 0.8) !important;
+    color: var(--text-bright) !important;
+    caret-color: var(--text-bright) !important;
+    transition: background-color 5000s ease-in-out 0s;
+}
+
+/* For Firefox autofill */
+.form-control:-moz-autofill {
+    background: rgba(15, 23, 42, 0.8) !important;
+    color: var(--text-bright) !important;
+}
+
+/* Ensure input text color stays white when typing */
+.form-control:not(:placeholder-shown) {
+    background: rgba(15, 23, 42, 0.8) !important;
+    color: var(--text-bright) !important;
+}
+
+/* For all input types */
+input.form-control,
+input[type="text"].form-control,
+input[type="email"].form-control,
+input[type="tel"].form-control,
+input[type="number"].form-control,
+input[type="date"].form-control,
+input[type="password"].form-control {
+    background: rgba(15, 23, 42, 0.6) !important;
+    color: var(--text-bright) !important;
+}
+
+input.form-control:focus,
+input[type="text"].form-control:focus,
+input[type="email"].form-control:focus,
+input[type="tel"].form-control:focus,
+input[type="number"].form-control:focus,
+input[type="date"].form-control:focus,
+input[type="password"].form-control:focus {
+    background: rgba(15, 23, 42, 0.8) !important;
+    color: var(--text-bright) !important;
 }
 
 .radio-group {
@@ -931,15 +980,442 @@ body {
 
 select.form-control {
     appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background: rgba(15, 23, 42, 0.6);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23cbd5e1' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 1rem center;
     padding-right: 2.5rem;
     cursor: pointer;
+    position: relative;
+    z-index: 1;
+    color: var(--text-bright);
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(10px);
 }
 
 select.form-control:focus {
+    background: rgba(15, 23, 42, 0.8);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236366f1' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    transform: translateY(-2px);
+    z-index: 10;
+}
+
+select.form-control:hover {
+    border-color: var(--border-hover);
+}
+
+/* Style dropdown options to match dark theme */
+select.form-control option {
+    background-color: #1e1b4b;
+    color: var(--text-bright);
+    padding: 0.75rem 1rem;
+    border: none;
+    font-size: 1rem;
+}
+
+select.form-control option:hover {
+    background-color: var(--primary-color);
+    color: var(--text-bright);
+}
+
+select.form-control option:checked,
+select.form-control option:focus {
+    background-color: var(--primary-color);
+    color: var(--text-bright);
+}
+
+select.form-control option:disabled {
+    color: var(--text-muted);
+    background-color: rgba(15, 23, 42, 0.4);
+}
+
+/* Contain select dropdowns within their form groups */
+.form-group {
+    position: relative;
+    overflow: visible;
+    isolation: isolate;
+}
+
+.form-group select.form-control {
+    position: relative;
+    z-index: 1;
+}
+
+.form-group:focus-within {
+    z-index: 10;
+}
+
+.form-group:focus-within select.form-control {
+    z-index: 10;
+    position: relative;
+}
+
+/* Ensure dropdown doesn't overflow container */
+.form-section {
+    position: relative;
+    overflow: visible;
+    isolation: isolate;
+}
+
+.input-group {
+    position: relative;
+    overflow: visible;
+    isolation: isolate;
+}
+
+/* Prevent dropdown from appearing outside viewport */
+.form-section select.form-control {
+    max-width: 100%;
+}
+
+/* Ensure select dropdown is properly styled in dark theme */
+select.form-control::-ms-expand {
+    display: none;
+}
+
+/* Additional containment for select elements */
+.form-group.full-width select.form-control {
+    width: 100%;
+}
+
+/* Ensure the select dropdown container is properly positioned */
+#step0 .form-group,
+#step0 .input-group {
+    position: relative;
+    z-index: 1;
+}
+
+#step0 .form-group:focus-within,
+#step0 .input-group:focus-within {
+    z-index: 100;
+}
+
+/* Style for select when it's the program selection */
+#program_id.form-control {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    font-size: 1rem;
+}
+
+#program_id.form-control:focus {
+    background-color: var(--bg-card-hover);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+#program_id.form-control option {
+    background-color: var(--bg-darker);
+    color: var(--text-color);
+}
+
+#program_id.form-control option:checked {
+    background-color: var(--primary-color);
+    color: var(--text-bright);
+}
+
+/* Custom Styled Modal - Centered Popup */
+.custom-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.custom-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.custom-modal-content {
+    position: relative;
+    background: var(--bg-gradient-card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 24px;
+    box-shadow: var(--shadow-xl);
+    max-width: 500px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    animation: slideUp 0.3s ease;
+    border: 1px solid var(--border-color);
+    margin: auto;
+    z-index: 10001;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+}
+
+.custom-modal-header {
+    padding: 2rem 2rem 1.5rem;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.custom-modal-icon {
+    width: 70px;
+    height: 70px;
+    margin: 0 auto 1.25rem;
+    background: var(--bg-gradient);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-md);
+    position: relative;
+}
+
+.custom-modal-icon::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    background: var(--bg-gradient);
+    opacity: 0.3;
+    filter: blur(8px);
+    z-index: -1;
+}
+
+.custom-modal-icon i {
+    font-size: 32px;
+    color: var(--text-bright);
+    z-index: 1;
+    position: relative;
+}
+
+.custom-modal-header h3 {
+    margin: 0;
+    color: var(--text-color);
+    font-size: 1.75rem;
+    font-weight: 600;
+    background: var(--bg-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.custom-modal-body {
+    padding: 2rem;
+    color: var(--text-color);
+    line-height: 1.7;
+}
+
+.custom-modal-body p {
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    color: var(--text-muted);
+}
+
+.custom-modal-body p:first-child {
+    color: var(--text-color);
+    font-size: 1.05rem;
+    font-weight: 500;
+}
+
+.custom-modal-body p:last-child {
+    margin-bottom: 0;
+}
+
+.custom-modal-body strong {
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.custom-modal-footer {
+    padding: 1.5rem 2rem 2rem;
+    display: flex;
+    justify-content: center;
+    border-top: 1px solid var(--border-color);
+}
+
+.custom-modal-btn {
+    background: var(--bg-gradient);
+    color: var(--text-bright);
+    border: none;
+    padding: 0.875rem 2.5rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow-md);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.custom-modal-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+}
+
+.custom-modal-btn:hover::before {
+    left: 100%;
+}
+
+.custom-modal-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    filter: brightness(1.1);
+}
+
+.custom-modal-btn:active {
+    transform: translateY(0);
+    box-shadow: var(--shadow-md);
+}
+
+.custom-modal-btn i {
+    font-size: 1rem;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(30px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Program Requirements Display Styling */
+.program-requirements-container {
+    margin-top: 20px;
+    padding: 1.5rem;
+    background: var(--bg-gradient-card);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-md);
+    animation: fadeIn 0.3s ease;
+}
+
+.program-requirements-header {
+    margin: 0 0 1rem 0;
+    color: var(--text-color);
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.program-requirements-header i {
+    color: var(--primary-color);
+    font-size: 1.2rem;
+    -webkit-text-fill-color: var(--primary-color);
+}
+
+.program-requirements-list {
+    color: var(--text-color);
+    font-size: 0.95rem;
+}
+
+.requirements-ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.requirement-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: rgba(15, 23, 42, 0.4);
+    border-radius: 8px;
+    border-left: 3px solid var(--primary-color);
+    transition: all 0.2s ease;
+}
+
+.requirement-item:hover {
+    background: rgba(15, 23, 42, 0.6);
+    transform: translateX(4px);
+}
+
+.requirement-item:last-child {
+    margin-bottom: 0;
+}
+
+.requirement-icon {
+    color: var(--primary-color);
+    font-size: 1rem;
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+}
+
+.requirement-content {
+    flex: 1;
+    line-height: 1.5;
+}
+
+.requirement-name {
+    color: var(--text-bright);
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.requirement-desc {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: 0.9rem;
+}
+
+.requirements-default {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    padding: 0.5rem;
+    background: rgba(15, 23, 42, 0.3);
+    border-radius: 8px;
+    border-left: 3px solid var(--primary-color);
 }
 
 textarea.form-control {

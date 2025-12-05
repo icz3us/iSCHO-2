@@ -204,15 +204,18 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
 $claimed_applicants = [];
 if (isset($_GET['view']) && $_GET['view'] === 'claiming_data') {
     try {
-        $stmt = $pdo->prepare("
-            SELECT DISTINCT u.id, u.firstname, u.lastname, u.middlename, u.email, ui.claim_status, ud.claim_photo_path
-            FROM users u
-            LEFT JOIN users_info ui ON u.id = ui.user_id
-            LEFT JOIN user_docs ud ON u.id = ud.user_id
-            WHERE ui.claim_status = 'Claimed' AND ud.claim_photo_path IS NOT NULL
-        ");
-        $stmt->execute();
-        $claimed_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $admin_program_id = $_SESSION['program_id'] ?? null;
+        if ($admin_program_id) {
+            $stmt = $pdo->prepare("
+                SELECT DISTINCT u.id, u.firstname, u.lastname, u.middlename, u.email, ui.claim_status, ud.claim_photo_path
+                FROM users u
+                LEFT JOIN users_info ui ON u.id = ui.user_id
+                LEFT JOIN user_docs ud ON u.id = ud.user_id
+                WHERE ui.claim_status = 'Claimed' AND ud.claim_photo_path IS NOT NULL AND ui.program_id = ?
+            ");
+            $stmt->execute([$admin_program_id]);
+            $claimed_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
     } catch (PDOException $e) {
         $_SESSION['claiming_data_error'] = "Error fetching claimed applicants: " . $e->getMessage();
     }
@@ -249,31 +252,53 @@ if ($firstname && $lastname) {
     $initials = 'AD'; 
 }
 
+// Get admin's program_id
+$admin_program_id = $_SESSION['program_id'] ?? null;
+
 $total_applicants = 0;
 $approved_applicants = 0;
 $denied_applicants = 0;
 $under_review_applicants = 0;
 
 try {
-    // Count total applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'Applicant'");
-    $stmt->execute();
-    $total_applicants = $stmt->fetchColumn();
+    // Count total applicants for this admin's program
+    if ($admin_program_id) {
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM users u
+            INNER JOIN users_info ui ON u.id = ui.user_id
+            WHERE u.role = 'Applicant' AND ui.program_id = ?
+        ");
+        $stmt->execute([$admin_program_id]);
+        $total_applicants = $stmt->fetchColumn();
 
-    // Count approved applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Approved'");
-    $stmt->execute();
-    $approved_applicants = $stmt->fetchColumn();
+        // Count approved applicants
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM users_info 
+            WHERE application_status = 'Approved' AND program_id = ?
+        ");
+        $stmt->execute([$admin_program_id]);
+        $approved_applicants = $stmt->fetchColumn();
 
-    // Count denied applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Denied'");
-    $stmt->execute();
-    $denied_applicants = $stmt->fetchColumn();
+        // Count denied applicants
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM users_info 
+            WHERE application_status = 'Denied' AND program_id = ?
+        ");
+        $stmt->execute([$admin_program_id]);
+        $denied_applicants = $stmt->fetchColumn();
 
-    // Count under review applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Under Review'");
-    $stmt->execute();
-    $under_review_applicants = $stmt->fetchColumn();
+        // Count under review applicants
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM users_info 
+            WHERE application_status = 'Under Review' AND program_id = ?
+        ");
+        $stmt->execute([$admin_program_id]);
+        $under_review_applicants = $stmt->fetchColumn();
+    }
 
 } catch (PDOException $e) {
     error_log("Error: " . $e->getMessage());
@@ -284,15 +309,19 @@ $female_count = 0;
 $other_count = 0;
 
 try {
-    $stmt = $pdo->prepare("
-        SELECT sex, COUNT(*) as count 
-        FROM users_info ui
-        JOIN users u ON ui.user_id = u.id
-        WHERE u.role = 'Applicant'
-        GROUP BY sex
-    ");
-    $stmt->execute();
-    $gender_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if ($admin_program_id) {
+        $stmt = $pdo->prepare("
+            SELECT sex, COUNT(*) as count 
+            FROM users_info ui
+            JOIN users u ON ui.user_id = u.id
+            WHERE u.role = 'Applicant' AND ui.program_id = ?
+            GROUP BY sex
+        ");
+        $stmt->execute([$admin_program_id]);
+        $gender_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $gender_data = [];
+    }
 
     foreach ($gender_data as $row) {
         $sex = strtolower($row['sex'] ?? '');
@@ -365,6 +394,13 @@ try {
     ";
 
     $params = [];
+    
+    // Filter by admin's program_id
+    if ($admin_program_id) {
+        $query .= " AND ui.program_id = ?";
+        $params[] = $admin_program_id;
+    }
+    
     if (!empty($search_query)) {
         $query .= "
             AND (
@@ -374,7 +410,7 @@ try {
             )
         ";
         $search_term = "%$search_query%";
-        $params = [$search_term, $search_term, $search_term];
+        $params = array_merge($params, [$search_term, $search_term, $search_term]);
     }
 
     $stmt = $pdo->prepare($query);
@@ -775,49 +811,55 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_deadline') {
 
 $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
 
-// Fetch municipality statistics
+// Fetch municipality statistics (filtered by admin's program)
 $municipality_stats = [];
-try {
-    $stmt = $pdo->prepare("
-        SELECT ui.municipality, COUNT(*) as total_count,
-            SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
-            SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
-        FROM users_info ui 
-        JOIN users u ON ui.user_id = u.id
-        WHERE ui.municipality IS NOT NULL 
-            AND ui.municipality != ''
-            AND u.role = 'Applicant'
-        GROUP BY ui.municipality 
-        ORDER BY ui.municipality ASC
-    ");
-    $stmt->execute();
-    $municipality_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    error_log("Error fetching municipality statistics: " . $e->getMessage());
+if ($admin_program_id) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT ui.municipality, COUNT(*) as total_count,
+                SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
+                SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
+            FROM users_info ui 
+            JOIN users u ON ui.user_id = u.id
+            WHERE ui.municipality IS NOT NULL 
+                AND ui.municipality != ''
+                AND u.role = 'Applicant'
+                AND ui.program_id = ?
+            GROUP BY ui.municipality 
+            ORDER BY ui.municipality ASC
+        ");
+        $stmt->execute([$admin_program_id]);
+        $municipality_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching municipality statistics: " . $e->getMessage());
+    }
 }
 
-// Fetch current college statistics
+// Fetch current college statistics (filtered by admin's program)
 $college_stats = [];
-try {
-    $stmt = $pdo->prepare("
-        SELECT 
-            up.current_college,
-            COUNT(*) as total_count,
-            SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
-            SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
-        FROM user_personal up
-        JOIN users u ON up.user_id = u.id
-        JOIN users_info ui ON u.id = ui.user_id
-        WHERE up.current_college IS NOT NULL 
-            AND up.current_college != ''
-            AND u.role = 'Applicant'
-        GROUP BY up.current_college 
-        ORDER BY up.current_college ASC
-    ");
-    $stmt->execute();
-    $college_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    error_log("Error fetching college statistics: " . $e->getMessage());
+if ($admin_program_id) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT 
+                up.current_college,
+                COUNT(*) as total_count,
+                SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
+                SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
+            FROM user_personal up
+            JOIN users u ON up.user_id = u.id
+            JOIN users_info ui ON u.id = ui.user_id
+            WHERE up.current_college IS NOT NULL 
+                AND up.current_college != ''
+                AND u.role = 'Applicant'
+                AND ui.program_id = ?
+            GROUP BY up.current_college 
+            ORDER BY up.current_college ASC
+        ");
+        $stmt->execute([$admin_program_id]);
+        $college_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching college statistics: " . $e->getMessage());
+    }
 }
 ?>
 
