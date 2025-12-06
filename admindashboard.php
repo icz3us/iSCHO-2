@@ -6,6 +6,7 @@ use PHPMailer\PHPMailer\Exception;
 
 require 'vendor/autoload.php'; 
 require_once __DIR__ . '/vendor/phpqrcode/qrlib.php';
+require_once __DIR__ . '/utils/document_verification.php';
 
 if ($_SESSION['user_role'] !== 'Admin') {
     header('Location: login.php');
@@ -417,6 +418,9 @@ try {
     $stmt->execute($params);
     $all_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Initialize DocumentVerification once for all applicants
+    $docVerification = new DocumentVerification($pdo);
+
     foreach ($all_applicants as &$applicant) {
         $stmt = $pdo->prepare("
             SELECT 
@@ -437,6 +441,14 @@ try {
             'voter' => $doc['voter_file_path'] ?? null,
             'profile_picture' => $doc['profile_picture_path'] ?? null,
             'claim_photo' => $doc['claim_photo_path'] ?? null,
+        ];
+
+        // Fetch document verification status
+        $verification_statuses = $docVerification->getUserDocumentStatus($applicant['id']);
+        $applicant['verification_status'] = [
+            'cor_file' => $verification_statuses['cor_file'] ?? null,
+            'indigency_file' => $verification_statuses['indigency_file'] ?? null,
+            'voter_file' => $verification_statuses['voter_file'] ?? null,
         ];
 
         $stmt = $pdo->prepare("
@@ -1390,6 +1402,42 @@ if ($admin_program_id) {
         top: 1.5rem;
     }
 
+    /* Verification Badge Styles */
+    .verification-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .verification-badge.verified {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    .verification-badge.rejected {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .verification-badge.under-review {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .verification-badge.pending {
+        background: rgba(156, 163, 175, 0.15);
+        color: #9ca3af;
+        border: 1px solid rgba(156, 163, 175, 0.3);
+    }
+
     /* Add these styles in the <style> section */
     .success-modal {
         display: none;
@@ -2243,23 +2291,38 @@ if ($admin_program_id) {
                                     <h4>Documents</h4>
                                     <p><strong>Certificate of Registration:</strong> 
                                         <?php 
-                                        echo isset($applicant['documents']['cor']) 
-                                            ? '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['cor']) . '\', \'Certificate of Registration\')">View</button>' 
-                                            : '-'; 
+                                        if (isset($applicant['documents']['cor'])) {
+                                            $cor_status = $applicant['verification_status']['cor_file']['verification_status'] ?? 'Pending';
+                                            $status_class = strtolower(str_replace(' ', '-', $cor_status));
+                                            echo '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['cor']) . '\', \'Certificate of Registration\', \'cor_file\', ' . $applicant['id'] . ')">View</button> ';
+                                            echo '<span class="verification-badge ' . $status_class . '">' . htmlspecialchars($cor_status) . '</span>';
+                                        } else {
+                                            echo '-';
+                                        }
                                         ?>
                                     </p>
                                     <p><strong>Certificate of Indigency:</strong> 
                                         <?php 
-                                        echo isset($applicant['documents']['indigency']) 
-                                            ? '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['indigency']) . '\', \'Certificate of Indigency\')">View</button>' 
-                                            : '-'; 
+                                        if (isset($applicant['documents']['indigency'])) {
+                                            $indigency_status = $applicant['verification_status']['indigency_file']['verification_status'] ?? 'Pending';
+                                            $status_class = strtolower(str_replace(' ', '-', $indigency_status));
+                                            echo '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['indigency']) . '\', \'Certificate of Indigency\', \'indigency_file\', ' . $applicant['id'] . ')">View</button> ';
+                                            echo '<span class="verification-badge ' . $status_class . '">' . htmlspecialchars($indigency_status) . '</span>';
+                                        } else {
+                                            echo '-';
+                                        }
                                         ?>
                                     </p>
                                     <p><strong>Voter Certificate:</strong> 
                                         <?php 
-                                        echo isset($applicant['documents']['voter']) 
-                                            ? '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['voter']) . '\', \'Voter Certificate\')">View</button>' 
-                                            : '-'; 
+                                        if (isset($applicant['documents']['voter'])) {
+                                            $voter_status = $applicant['verification_status']['voter_file']['verification_status'] ?? 'Pending';
+                                            $status_class = strtolower(str_replace(' ', '-', $voter_status));
+                                            echo '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['voter']) . '\', \'Voter Certificate\', \'voter_file\', ' . $applicant['id'] . ')">View</button> ';
+                                            echo '<span class="verification-badge ' . $status_class . '">' . htmlspecialchars($voter_status) . '</span>';
+                                        } else {
+                                            echo '-';
+                                        }
                                         ?>
                                     </p>
                                     </div>
@@ -2552,9 +2615,14 @@ if ($admin_program_id) {
             <span class="close-btn" onclick="closeDocumentModal()">&times;</span>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                 <h3 id="documentTitle" style="margin:0;">Document Preview</h3>
-                <button class="ocr-quick-btn" onclick="openOCRForCurrentDocument()" title="Extract text from this document using OCR">
-                    <i class="fas fa-microchip"></i> Extract Text
-                </button>
+                <div style="display:flex; gap:0.5rem;">
+                    <button class="ocr-quick-btn" onclick="openOCRForCurrentDocument()" title="Extract text from this document using OCR">
+                        <i class="fas fa-microchip"></i> Extract Text
+                    </button>
+                </div>
+            </div>
+            <div id="verificationStatus" style="margin-bottom:1rem; padding:0.75rem; border-radius:8px; display:none;">
+                <strong>Status: </strong><span id="verificationStatusText"></span>
             </div>
             <div class="document-container">
                 <div class="pdf-toolbar">
@@ -2574,6 +2642,17 @@ if ($admin_program_id) {
                 <div class="pdf-viewer">
                     <iframe id="documentViewer" width="100%" height="100%" frameborder="0"></iframe>
                 </div>
+            </div>
+            <div id="verificationActions" style="margin-top:1rem; display:flex; gap:0.5rem; justify-content:flex-end; display:none;">
+                <button class="verify-btn" onclick="verifyDocument('Verified')" style="background:#22c55e; color:white; padding:0.5rem 1rem; border:none; border-radius:6px; cursor:pointer;">
+                    <i class="fas fa-check-circle"></i> Verify
+                </button>
+                <button class="reject-btn" onclick="verifyDocument('Rejected')" style="background:#ef4444; color:white; padding:0.5rem 1rem; border:none; border-radius:6px; cursor:pointer;">
+                    <i class="fas fa-times-circle"></i> Reject
+                </button>
+                <button class="review-btn" onclick="verifyDocument('Under Review')" style="background:#f59e0b; color:white; padding:0.5rem 1rem; border:none; border-radius:6px; cursor:pointer;">
+                    <i class="fas fa-clock"></i> Under Review
+                </button>
             </div>
         </div>
     </div>
@@ -3776,20 +3855,136 @@ if ($admin_program_id) {
             viewer.style.width = `${currentZoom}%`;
         }
 
-        function showDocumentModal(documentUrl, title) {
+        // Store current document info for verification
+        let currentDocumentInfo = {
+            url: null,
+            type: null,
+            userId: null,
+            title: null
+        };
+
+        function showDocumentModal(documentUrl, title, documentType = null, userId = null) {
             const modal = document.getElementById('documentModal');
             const viewer = document.getElementById('documentViewer');
             const docTitle = document.getElementById('documentTitle');
+            const verificationStatus = document.getElementById('verificationStatus');
+            const verificationStatusText = document.getElementById('verificationStatusText');
+            const verificationActions = document.getElementById('verificationActions');
             
             // Store original document URL for OCR processing
             currentOCRData.originalDocumentUrl = documentUrl;
             currentOCRData.documentTitle = title;
             
+            // Store document info for verification
+            currentDocumentInfo.url = documentUrl;
+            currentDocumentInfo.type = documentType;
+            currentDocumentInfo.userId = userId;
+            currentDocumentInfo.title = title;
+            
             docTitle.textContent = title;
             viewer.src = documentUrl;
             document.getElementById('zoomLevel').value = '100';
+            
+            // Show verification status and actions if document type and user ID are provided
+            if (documentType && userId) {
+                verificationActions.style.display = 'flex';
+                loadVerificationStatus(userId, documentType);
+            } else {
+                verificationActions.style.display = 'none';
+                verificationStatus.style.display = 'none';
+            }
+            
             modal.style.display = 'block';
             document.body.style.overflow = 'hidden';
+        }
+
+        function loadVerificationStatus(userId, documentType) {
+            fetch(`ajax_get_document_status.php?user_id=${userId}&document_type=${documentType}`)
+                .then(response => response.json())
+                .then(data => {
+                    const verificationStatus = document.getElementById('verificationStatus');
+                    const verificationStatusText = document.getElementById('verificationStatusText');
+                    
+                    if (data.success && data.status) {
+                        verificationStatus.style.display = 'block';
+                        const status = data.status.verification_status || 'Pending';
+                        verificationStatusText.textContent = status;
+                        
+                        // Set status color
+                        verificationStatus.className = '';
+                        if (status === 'Verified') {
+                            verificationStatus.style.background = 'rgba(34, 197, 94, 0.1)';
+                            verificationStatus.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+                            verificationStatus.style.color = '#22c55e';
+                        } else if (status === 'Rejected') {
+                            verificationStatus.style.background = 'rgba(239, 68, 68, 0.1)';
+                            verificationStatus.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                            verificationStatus.style.color = '#ef4444';
+                        } else if (status === 'Under Review') {
+                            verificationStatus.style.background = 'rgba(245, 158, 11, 0.1)';
+                            verificationStatus.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+                            verificationStatus.style.color = '#f59e0b';
+                        } else {
+                            verificationStatus.style.background = 'rgba(156, 163, 175, 0.1)';
+                            verificationStatus.style.border = '1px solid rgba(156, 163, 175, 0.3)';
+                            verificationStatus.style.color = '#9ca3af';
+                        }
+                    } else {
+                        verificationStatus.style.display = 'block';
+                        verificationStatus.style.background = 'rgba(156, 163, 175, 0.1)';
+                        verificationStatus.style.border = '1px solid rgba(156, 163, 175, 0.3)';
+                        verificationStatus.style.color = '#9ca3af';
+                        verificationStatusText.textContent = 'Pending';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading verification status:', error);
+                });
+        }
+
+        function verifyDocument(status) {
+            if (!currentDocumentInfo.userId || !currentDocumentInfo.type) {
+                alert('Document information missing');
+                return;
+            }
+
+            const notes = prompt('Enter verification notes (optional):');
+            const rejectionReason = status === 'Rejected' ? prompt('Enter rejection reason (required):') : null;
+
+            if (status === 'Rejected' && !rejectionReason) {
+                alert('Rejection reason is required');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('action', 'verify_document');
+            formData.append('user_id', currentDocumentInfo.userId);
+            formData.append('document_type', currentDocumentInfo.type);
+            formData.append('status', status);
+            formData.append('notes', notes || '');
+            formData.append('rejection_reason', rejectionReason || '');
+
+            fetch('ajax_verify_document.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Document verification updated successfully');
+                    loadVerificationStatus(currentDocumentInfo.userId, currentDocumentInfo.type);
+                    // Reload page to update status badges
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    alert('Error: ' + (data.message || 'Failed to verify document'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error verifying document');
+            });
         }
 
         function setZoom(value) {

@@ -1497,6 +1497,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <i class="fas fa-upload"></i> Choose File
                             </label>
                             <span class="file-name"><?php echo !empty($user_docs['cor_file_path']) ? basename($user_docs['cor_file_path']) : 'No file chosen'; ?></span>
+                            <?php if (!empty($user_docs['cor_file_path']) && isset($doc_verification_status['cor_file'])): 
+                                $cor_status = $doc_verification_status['cor_file']['verification_status'] ?? 'Pending';
+                                $status_class = strtolower(str_replace(' ', '-', $cor_status));
+                            ?>
+                                <span class="verification-badge-applicant <?php echo $status_class; ?>" style="margin-left: 0.5rem;">
+                                    <?php echo htmlspecialchars($cor_status); ?>
+                                </span>
+                            <?php endif; ?>
                         </div>
                         <?php if (isset($_SESSION['application_error']) && strpos($_SESSION['application_error'], 'cor_file') !== false): ?>
                             <div class="file-error"><?php echo $_SESSION['application_error']; ?></div>
@@ -1527,6 +1535,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <i class="fas fa-upload"></i> Choose File
                             </label>
                             <span class="file-name"><?php echo !empty($user_docs['voter_file_path']) ? basename($user_docs['voter_file_path']) : 'No file chosen'; ?></span>
+                            <?php if (!empty($user_docs['voter_file_path']) && isset($doc_verification_status['voter_file'])): 
+                                $voter_status = $doc_verification_status['voter_file']['verification_status'] ?? 'Pending';
+                                $status_class = strtolower(str_replace(' ', '-', $voter_status));
+                            ?>
+                                <span class="verification-badge-applicant <?php echo $status_class; ?>" style="margin-left: 0.5rem;">
+                                    <?php echo htmlspecialchars($voter_status); ?>
+                                </span>
+                            <?php endif; ?>
                         </div>
                         <?php if (isset($_SESSION['application_error']) && strpos($_SESSION['application_error'], 'voter_file') !== false): ?>
                             <div class="file-error"><?php echo $_SESSION['application_error']; ?></div>
@@ -2187,6 +2203,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* Verification Badge Styles for Applicant Dashboard */
+.verification-badge-applicant {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.verification-badge-applicant.verified {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.verification-badge-applicant.rejected {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.verification-badge-applicant.under-review {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.verification-badge-applicant.pending {
+    background: rgba(156, 163, 175, 0.15);
+    color: #9ca3af;
+    border: 1px solid rgba(156, 163, 175, 0.3);
 }
 
 /* Family Background Layout - Vertical Stack */
