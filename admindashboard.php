@@ -3076,10 +3076,28 @@ if ($admin_program_id) {
         });
 
         function openModal(modalId) {
+            // Close all other applicant modals first to prevent multiple modals from showing
+            const allModals = document.querySelectorAll('.modal');
+            allModals.forEach(modal => {
+                // Only close applicant modals (those starting with 'modal-'), not other modals like documentModal or success-modal
+                if (modal.id !== modalId && modal.id.startsWith('modal-')) {
+                    modal.style.display = 'none';
+                    // Also reset any form sections within closed modals
+                    const forms = modal.querySelectorAll('.form-section');
+                    forms.forEach(form => form.style.display = 'none');
+                    // Reset detailed info sections
+                    const detailedInfo = modal.querySelectorAll('.detailed-info');
+                    detailedInfo.forEach(info => info.style.display = 'none');
+                }
+            });
+            
+            // Open the requested modal
             const modal = document.getElementById(modalId);
             if (modal) {
                 modal.style.display = 'block';
                 document.body.style.overflow = 'hidden';
+            } else {
+                console.error('Modal not found: ' + modalId);
             }
         }
 
@@ -3089,10 +3107,23 @@ if ($admin_program_id) {
                 modal.style.display = 'none';
                 document.body.style.overflow = 'auto';
                 
+                // Reset any form sections within the closed modal
                 const forms = modal.querySelectorAll('.form-section');
                 forms.forEach(form => form.style.display = 'none');
+                
+                // Reset detailed info sections
+                const detailedInfo = modal.querySelectorAll('.detailed-info');
+                detailedInfo.forEach(info => info.style.display = 'none');
             }
         }
+        
+        // Initialize: Ensure all applicant modals are closed on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const allApplicantModals = document.querySelectorAll('.modal[id^="modal-"]');
+            allApplicantModals.forEach(modal => {
+                modal.style.display = 'none';
+            });
+        });
 
         function openScheduleModal(modalId) {
             const modal = document.getElementById(modalId);
@@ -3521,11 +3552,16 @@ if ($admin_program_id) {
             }
         }
 
-        // Close modal when clicking outside
+        // Close modal when clicking outside (but not on modal content)
         window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
+            // Only close if clicking directly on the modal background (not on modal-content)
+            if (event.target.classList.contains('modal') && !event.target.closest('.modal-content')) {
+                const modal = event.target;
+                modal.style.display = 'none';
                 document.body.style.overflow = 'auto';
+                // Reset any form sections within the closed modal
+                const forms = modal.querySelectorAll('.form-section');
+                forms.forEach(form => form.style.display = 'none');
             }
         }
 
