@@ -513,7 +513,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['approve']) || isset($
 
             // Required fields from user_residency
             $required_user_residency = [
-                'permanent_address', 'residency_duration', 'registered_voter',
+                'permanent_address',
                 'guardian_name', 'relationship', 'guardian_address', 'guardian_contact'
             ];
 
@@ -2205,11 +2205,6 @@ if ($admin_program_id) {
                                     <div class="info-row"><strong>Permanent Address:</strong> <span><?php echo htmlspecialchars($applicant['permanent_address'] ?: '-'); ?></span></div>
                                     <div class="info-row"><strong>Municipality:</strong> <span><?php echo htmlspecialchars($applicant['municipality'] ?: '-'); ?></span></div>
                                     <div class="info-row"><strong>Barangay:</strong> <span><?php echo htmlspecialchars($applicant['barangay'] ?: '-'); ?></span></div>
-                                    <div class="info-row"><strong>Residency Duration:</strong> <span><?php echo htmlspecialchars($applicant['residency_duration'] ?: '-'); ?></span></div>
-                                    <div class="info-row"><strong>Registered Voter:</strong> <span><?php echo htmlspecialchars($applicant['registered_voter'] ?: '-'); ?></span></div>
-                                    <div class="info-row"><strong>Father's Voting Duration:</strong> <span><?php echo htmlspecialchars($applicant['father_voting_duration'] ?: '-'); ?></span></div>
-                                    <div class="info-row"><strong>Mother's Voting Duration:</strong> <span><?php echo htmlspecialchars($applicant['mother_voting_duration'] ?: '-'); ?></span></div>
-                                    <div class="info-row"><strong>Applicant's Voting Duration:</strong> <span><?php echo htmlspecialchars($applicant['applicant_voting_duration'] ?: '-'); ?></span></div>
                                     <div class="info-row"><strong>Guardian Name:</strong> <span><?php echo htmlspecialchars($applicant['guardian_name'] ?: '-'); ?></span></div>
                                     <div class="info-row"><strong>Relationship:</strong> <span><?php echo htmlspecialchars($applicant['relationship'] ?: '-'); ?></span></div>
                                     <div class="info-row"><strong>Guardian Address:</strong> <span><?php echo htmlspecialchars($applicant['guardian_address'] ?: '-'); ?></span></div>
