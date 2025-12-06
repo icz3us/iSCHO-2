@@ -314,14 +314,238 @@ try {
     $_SESSION['admin_list_error'] = "Error fetching admins: " . $e->getMessage();
 }
 
-// Fetch all scholarship programs
+// Fetch all scholarship programs (including academic year info) - ALL programs for management, active only for dropdowns
 $scholarship_programs = [];
+$active_scholarship_programs = [];
+$has_academic_year_columns = false;
+
 try {
-    $stmt = $pdo->prepare("SELECT id, program_name, program_description, is_active FROM scholarship_programs WHERE is_active = 1 ORDER BY program_name");
-    $stmt->execute();
-    $scholarship_programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // First check if table exists
+    $table_check = $pdo->query("SHOW TABLES LIKE 'scholarship_programs'");
+    if ($table_check->rowCount() == 0) {
+        $_SESSION['programs_error'] = "Scholarship programs table does not exist. Please run the migration script: migrate_multi_program_support.php";
+        error_log("Scholarship programs table does not exist");
+    } else {
+        // Check if academic_year column exists
+        $column_check = $pdo->query("SHOW COLUMNS FROM scholarship_programs LIKE 'academic_year'");
+        $has_academic_year_columns = ($column_check->rowCount() > 0);
+        
+        if ($has_academic_year_columns) {
+            // Get ALL programs (active and inactive) for management section - with academic year columns
+            $stmt = $pdo->prepare("SELECT id, program_name, program_description, is_active, academic_year, application_start_date, application_end_date FROM scholarship_programs ORDER BY is_active DESC, program_name");
+            $stmt->execute();
+            $scholarship_programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Get only active programs for dropdowns
+            $stmt = $pdo->prepare("SELECT id, program_name, program_description, is_active, academic_year, application_start_date, application_end_date FROM scholarship_programs WHERE is_active = 1 ORDER BY program_name");
+            $stmt->execute();
+            $active_scholarship_programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            // Get ALL programs without academic year columns (backward compatibility)
+            $stmt = $pdo->prepare("SELECT id, program_name, program_description, is_active FROM scholarship_programs ORDER BY is_active DESC, program_name");
+            $stmt->execute();
+            $programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Add null values for academic year columns
+            foreach ($programs as $program) {
+                $program['academic_year'] = null;
+                $program['application_start_date'] = null;
+                $program['application_end_date'] = null;
+                $scholarship_programs[] = $program;
+            }
+            
+            // Get only active programs for dropdowns
+            $stmt = $pdo->prepare("SELECT id, program_name, program_description, is_active FROM scholarship_programs WHERE is_active = 1 ORDER BY program_name");
+            $stmt->execute();
+            $active_programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            foreach ($active_programs as $program) {
+                $program['academic_year'] = null;
+                $program['application_start_date'] = null;
+                $program['application_end_date'] = null;
+                $active_scholarship_programs[] = $program;
+            }
+            
+            // Show warning that migration is needed
+            if (empty($_SESSION['programs_error'])) {
+                $_SESSION['programs_warning'] = "Academic year columns not found. Please run migrate_add_academic_year.php to enable academic year features.";
+            }
+        }
+        
+        // Debug: Log program count
+        error_log("Found " . count($scholarship_programs) . " total programs and " . count($active_scholarship_programs) . " active programs. Academic year columns: " . ($has_academic_year_columns ? 'Yes' : 'No'));
+    }
 } catch (PDOException $e) {
     $_SESSION['programs_error'] = "Error fetching programs: " . $e->getMessage();
+    error_log("Error fetching scholarship programs: " . $e->getMessage());
+    // Set default values on error
+    $has_academic_year_columns = false;
+    $scholarship_programs = [];
+    $active_scholarship_programs = [];
+}
+
+// Handle new scholarship program creation
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['create_program'])) {
+    $program_name = trim($_POST['program_name'] ?? '');
+    $program_description = trim($_POST['program_description'] ?? '');
+    $academic_year = trim($_POST['academic_year'] ?? '');
+    $application_start_date = !empty($_POST['application_start_date']) ? trim($_POST['application_start_date']) : null;
+    $application_end_date = !empty($_POST['application_end_date']) ? trim($_POST['application_end_date']) : null;
+    $is_active = isset($_POST['is_active']) ? 1 : 1; // Default to active
+    
+    $create_error = '';
+    
+    // Validate program name
+    if (empty($program_name)) {
+        $create_error = "Program name is required.";
+    } elseif (strlen($program_name) > 255) {
+        $create_error = "Program name is too long (maximum 255 characters).";
+    }
+    
+    // Validate academic year format if provided
+    if (!empty($academic_year) && !preg_match('/^\d{4}([\/\-]\d{4})?$/', $academic_year)) {
+        $create_error = "Invalid academic year format. Use format: YYYY or YYYY-YYYY (e.g., 2025 or 2025-2026)";
+    }
+    
+    // Validate dates if provided
+    if ($application_start_date && !DateTime::createFromFormat('Y-m-d', $application_start_date)) {
+        $create_error = "Invalid application start date format. Use YYYY-MM-DD.";
+    }
+    
+    if ($application_end_date && !DateTime::createFromFormat('Y-m-d', $application_end_date)) {
+        $create_error = "Invalid application end date format. Use YYYY-MM-DD.";
+    }
+    
+    // Check date range
+    if ($application_start_date && $application_end_date) {
+        $start = new DateTime($application_start_date);
+        $end = new DateTime($application_end_date);
+        if ($start > $end) {
+            $create_error = "Application start date must be before end date.";
+        }
+    }
+    
+    // Check if program name already exists
+    if (empty($create_error)) {
+        try {
+            $stmt = $pdo->prepare("SELECT id FROM scholarship_programs WHERE program_name = ?");
+            $stmt->execute([$program_name]);
+            if ($stmt->fetch()) {
+                $create_error = "A scholarship program with this name already exists.";
+            }
+        } catch (PDOException $e) {
+            $create_error = "Error checking program name: " . $e->getMessage();
+        }
+    }
+    
+    if (empty($create_error)) {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO scholarship_programs (
+                    program_name, program_description, academic_year, 
+                    application_start_date, application_end_date, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $program_name,
+                !empty($program_description) ? $program_description : null,
+                !empty($academic_year) ? $academic_year : null,
+                $application_start_date,
+                $application_end_date,
+                $is_active
+            ]);
+            
+            $_SESSION['program_create_success'] = "Scholarship program '{$program_name}' created successfully!";
+        } catch (PDOException $e) {
+            $create_error = "Failed to create program: " . $e->getMessage();
+        }
+    }
+    
+    if (!empty($create_error)) {
+        $_SESSION['program_create_error'] = $create_error;
+    }
+    
+    header('Location: superadmindashboard.php');
+    exit;
+}
+
+// Handle program academic year update
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_program_academic_year'])) {
+    $program_id = (int)$_POST['program_id'];
+    $academic_year = trim($_POST['academic_year'] ?? '');
+    $application_start_date = !empty($_POST['application_start_date']) ? trim($_POST['application_start_date']) : null;
+    $application_end_date = !empty($_POST['application_end_date']) ? trim($_POST['application_end_date']) : null;
+    
+    $update_error = '';
+    
+    // Check if academic_year columns exist
+    $has_academic_year_cols = false;
+    try {
+        $col_check = $pdo->query("SHOW COLUMNS FROM scholarship_programs LIKE 'academic_year'");
+        $has_academic_year_cols = ($col_check->rowCount() > 0);
+    } catch (PDOException $e) {
+        $update_error = "Error checking database structure: " . $e->getMessage();
+    }
+    
+    if (!$has_academic_year_cols && empty($update_error)) {
+        $update_error = "Academic year columns do not exist. Please run migrate_add_academic_year.php first.";
+    }
+    
+    // Validate academic year format (e.g., "2025" or "2025-2026")
+    if (empty($update_error) && !empty($academic_year) && !preg_match('/^\d{4}([\/\-]\d{4})?$/', $academic_year)) {
+        $update_error = "Invalid academic year format. Use format: YYYY or YYYY-YYYY (e.g., 2025 or 2025-2026)";
+    }
+    
+    // Validate dates if provided
+    if (empty($update_error) && $application_start_date && !DateTime::createFromFormat('Y-m-d', $application_start_date)) {
+        $update_error = "Invalid application start date format. Use YYYY-MM-DD.";
+    }
+    
+    if (empty($update_error) && $application_end_date && !DateTime::createFromFormat('Y-m-d', $application_end_date)) {
+        $update_error = "Invalid application end date format. Use YYYY-MM-DD.";
+    }
+    
+    // Check date range
+    if (empty($update_error) && $application_start_date && $application_end_date) {
+        $start = new DateTime($application_start_date);
+        $end = new DateTime($application_end_date);
+        if ($start > $end) {
+            $update_error = "Application start date must be before end date.";
+        }
+    }
+    
+    if (empty($update_error)) {
+        try {
+            $stmt = $pdo->prepare("
+                UPDATE scholarship_programs 
+                SET academic_year = ?, application_start_date = ?, application_end_date = ?, updated_at = NOW()
+                WHERE id = ?
+            ");
+            $stmt->execute([
+                !empty($academic_year) ? $academic_year : null,
+                $application_start_date,
+                $application_end_date,
+                $program_id
+            ]);
+            
+            // Get program name for success message
+            $stmt = $pdo->prepare("SELECT program_name FROM scholarship_programs WHERE id = ?");
+            $stmt->execute([$program_id]);
+            $program = $stmt->fetch(PDO::FETCH_ASSOC);
+            $program_name = $program['program_name'] ?? 'program';
+            
+            $_SESSION['program_update_success'] = "Academic year updated successfully for {$program_name}";
+        } catch (PDOException $e) {
+            $update_error = "Update failed: " . $e->getMessage();
+        }
+    }
+    
+    if (!empty($update_error)) {
+        $_SESSION['program_update_error'] = $update_error;
+    }
+    
+    header('Location: superadmindashboard.php');
+    exit;
 }
 
 // Fetch all applicants for the modals
@@ -1640,6 +1864,12 @@ unset($_SESSION['announcement_error']);
             display: block;
         }
 
+        .admin-form {
+            width: 100%;
+            max-width: 100%;
+            margin-top: 2rem;
+        }
+        
         .admin-form,
         .manage-admins {
             display: none;
@@ -2656,6 +2886,7 @@ unset($_SESSION['announcement_error']);
                 <li><a href="#" id="announcementsLink" onclick="showAnnouncements()"><i class="fas fa-bullhorn"></i><span>Announcements</span></a></li>
                 <li><a href="#" id="registerAdminLink" onclick="showRegisterAdmin()"><i class="fas fa-user-plus"></i><span>Register an Admin</span></a></li>
                 <li><a href="#" id="manageAdminsLink" onclick="showManageAdmins()"><i class="fas fa-users"></i><span>Manage Admins</span></a></li>
+                <li><a href="#" id="manageProgramsLink" onclick="showManagePrograms()"><i class="fas fa-graduation-cap"></i><span>Manage Programs</span></a></li>
                 <li><a href="#" id="analyticsLink" onclick="showAnalyticsWithLoad()"><i class="fas fa-chart-line"></i><span>Analytics</span></a></li>
                 <li><a href="superadmindashboard.php?action=logout"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a></li>
             </ul>
@@ -2670,6 +2901,234 @@ unset($_SESSION['announcement_error']);
 
             <div class="welcome-text">
                 <p>Welcome to the Super Admin Dashboard</p>
+            </div>
+
+            <!-- Manage Programs Section -->
+            <div class="admin-form" id="manageProgramsSection" style="display: none;">
+                <div class="page-header">
+                    <h2><i class="fas fa-graduation-cap"></i> Manage Scholarship Programs</h2>
+                    <p>Create new programs and configure academic year settings for existing programs</p>
+                </div>
+                
+                <!-- Create New Program Section -->
+                <div class="form-section" style="margin-bottom: 2rem;">
+                    <h3><i class="fas fa-plus-circle"></i> Create New Scholarship Program</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+                        Add a new scholarship program that will be available throughout the entire system.
+                    </p>
+                    
+                    <form method="POST" action="superadmindashboard.php" class="program-form" style="background: var(--bg-gradient-card); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="new_program_name">
+                                    <i class="fas fa-graduation-cap"></i> Program Name <span class="required">*</span>
+                                </label>
+                                <div class="input-group">
+                                    <i class="fas fa-graduation-cap"></i>
+                                    <input type="text" 
+                                           id="new_program_name" 
+                                           name="program_name" 
+                                           class="form-control" 
+                                           placeholder="e.g., EduKalinga, Handog Edukasyon"
+                                           required
+                                           maxlength="255">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label for="new_program_description">
+                                    <i class="fas fa-align-left"></i> Program Description
+                                </label>
+                                <div class="input-group">
+                                    <i class="fas fa-align-left"></i>
+                                    <textarea id="new_program_description" 
+                                              name="program_description" 
+                                              class="form-control" 
+                                              rows="3"
+                                              placeholder="Brief description of the scholarship program"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="new_academic_year">
+                                    <i class="fas fa-calendar"></i> Academic Year
+                                </label>
+                                <div class="input-group">
+                                    <i class="fas fa-calendar"></i>
+                                    <input type="text" 
+                                           id="new_academic_year" 
+                                           name="academic_year" 
+                                           class="form-control" 
+                                           placeholder="e.g., 2025 or 2025-2026"
+                                           pattern="\d{4}([\/\-]\d{4})?">
+                                </div>
+                                <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                    Format: YYYY or YYYY-YYYY (e.g., 2025 or 2025-2026)
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="new_application_start_date">
+                                    <i class="fas fa-calendar-check"></i> Application Start Date
+                                </label>
+                                <div class="input-group">
+                                    <i class="fas fa-calendar-check"></i>
+                                    <input type="date" 
+                                           id="new_application_start_date" 
+                                           name="application_start_date" 
+                                           class="form-control">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="new_application_end_date">
+                                    <i class="fas fa-calendar-times"></i> Application End Date
+                                </label>
+                                <div class="input-group">
+                                    <i class="fas fa-calendar-times"></i>
+                                    <input type="date" 
+                                           id="new_application_end_date" 
+                                           name="application_end_date" 
+                                           class="form-control">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-buttons" style="margin-top: 1rem;">
+                            <button type="submit" name="create_program" class="submit-btn">
+                                <i class="fas fa-plus"></i> Create Program
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <div class="form-section">
+                    <h3><i class="fas fa-calendar-alt"></i> Existing Programs - Academic Year Settings</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+                        Configure the academic year and application period for existing scholarship programs. 
+                        Documents uploaded by applicants will be validated against these dates to ensure authenticity.
+                    </p>
+                    
+                    <?php if (!$has_academic_year_columns): ?>
+                        <div class="error-message" style="background: rgba(245, 158, 11, 0.1); border-color: var(--warning-color); margin-bottom: 1.5rem;">
+                            <i class="fas fa-exclamation-triangle"></i> 
+                            <strong>Database Migration Required:</strong> The academic year columns are not yet in your database.
+                            <br><br>
+                            <strong>To enable academic year features:</strong>
+                            <ol style="text-align: left; display: inline-block; margin: 1rem 0;">
+                                <li>Run the migration script: <a href="migrate_add_academic_year.php" style="color: var(--primary-color); text-decoration: underline; font-weight: bold;" target="_blank">migrate_add_academic_year.php</a></li>
+                                <li>Refresh this page after running the migration</li>
+                            </ol>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($scholarship_programs)): ?>
+                        <div style="display: grid; gap: 1.5rem; grid-template-columns: 1fr;">
+                        <?php foreach ($scholarship_programs as $program): ?>
+                    <div class="program-card" style="background: var(--bg-gradient-card); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color); box-shadow: var(--shadow-md); transition: all 0.3s ease; <?php echo $program['is_active'] == 0 ? 'opacity: 0.7; border-left: 4px solid var(--error-color);' : 'border-left: 4px solid var(--success-color);'; ?>">
+                        <form method="POST" action="superadmindashboard.php" class="program-form">
+                            <input type="hidden" name="program_id" value="<?php echo $program['id']; ?>">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <h4 style="margin: 0; color: var(--text-bright);">
+                                    <i class="fas fa-graduation-cap"></i> <?php echo htmlspecialchars($program['program_name']); ?>
+                                    <?php if ($program['is_active'] == 0): ?>
+                                        <span style="background: var(--error-color); color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-left: 0.5rem;">INACTIVE</span>
+                                    <?php else: ?>
+                                        <span style="background: var(--success-color); color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-left: 0.5rem;">ACTIVE</span>
+                                    <?php endif; ?>
+                                </h4>
+                            </div>
+                            <?php if (!empty($program['program_description'])): ?>
+                                <p style="color: var(--text-muted); margin-bottom: 1rem;"><?php echo htmlspecialchars($program['program_description']); ?></p>
+                            <?php endif; ?>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="academic_year_<?php echo $program['id']; ?>">
+                                        <i class="fas fa-calendar"></i> Academic Year
+                                    </label>
+                                    <div class="input-group">
+                                        <i class="fas fa-calendar"></i>
+                                        <input type="text" 
+                                               id="academic_year_<?php echo $program['id']; ?>" 
+                                               name="academic_year" 
+                                               class="form-control" 
+                                               placeholder="e.g., 2025 or 2025-2026"
+                                               value="<?php echo htmlspecialchars($program['academic_year'] ?? ''); ?>"
+                                               pattern="\d{4}([\/\-]\d{4})?">
+                                    </div>
+                                    <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                                        Format: YYYY or YYYY-YYYY (e.g., 2025 or 2025-2026)
+                                    </small>
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="application_start_date_<?php echo $program['id']; ?>">
+                                        <i class="fas fa-calendar-check"></i> Application Start Date
+                                    </label>
+                                    <div class="input-group">
+                                        <i class="fas fa-calendar-check"></i>
+                                        <input type="date" 
+                                               id="application_start_date_<?php echo $program['id']; ?>" 
+                                               name="application_start_date" 
+                                               class="form-control"
+                                               value="<?php echo htmlspecialchars($program['application_start_date'] ?? ''); ?>">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="application_end_date_<?php echo $program['id']; ?>">
+                                        <i class="fas fa-calendar-times"></i> Application End Date
+                                    </label>
+                                    <div class="input-group">
+                                        <i class="fas fa-calendar-times"></i>
+                                        <input type="date" 
+                                               id="application_end_date_<?php echo $program['id']; ?>" 
+                                               name="application_end_date" 
+                                               class="form-control"
+                                               value="<?php echo htmlspecialchars($program['application_end_date'] ?? ''); ?>">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-buttons" style="margin-top: 1rem;">
+                                <button type="submit" name="update_program_academic_year" class="submit-btn">
+                                    <i class="fas fa-save"></i> Update Academic Year
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                        <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="info-message" style="padding: 2rem; text-align: center; color: var(--text-muted); background: var(--bg-gradient-card); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: var(--shadow-md);">
+                            <i class="fas fa-info-circle" style="font-size: 2.5rem; margin-bottom: 1rem; color: var(--primary-color);"></i>
+                            <p style="font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--text-bright);">No scholarship programs found.</p>
+                            <p style="font-size: 0.9rem; margin-bottom: 1rem;">Create your first program using the form above.</p>
+                            <?php if (isset($_SESSION['programs_error'])): ?>
+                                <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--error-color); border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+                                    <p style="font-size: 0.85rem; color: var(--error-color); margin: 0;">
+                                        <i class="fas fa-exclamation-triangle"></i> <strong>Error:</strong> <?php echo htmlspecialchars($_SESSION['programs_error']); unset($_SESSION['programs_error']); ?>
+                                    </p>
+                                </div>
+                            <?php endif; ?>
+                            <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">If you expected to see programs here, please check:</p>
+                                <ul style="text-align: left; display: inline-block; font-size: 0.85rem; color: var(--text-muted);">
+                                    <li>That the scholarship_programs table exists in your database</li>
+                                    <li>That programs have been created (use the form above)</li>
+                                    <li>Check your database connection and error logs</li>
+                                </ul>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
 
             <!-- Display Success/Error Messages -->
@@ -2731,6 +3190,35 @@ unset($_SESSION['announcement_error']);
             <?php if (isset($_SESSION['secret_key_error'])): ?>
                 <div class="error-message">
                     <?php echo $_SESSION['secret_key_error']; unset($_SESSION['secret_key_error']); ?>
+                </div>
+            <?php endif; ?>
+            <?php if (isset($_SESSION['program_update_success'])): ?>
+                <div class="success-message">
+                    <?php echo $_SESSION['program_update_success']; unset($_SESSION['program_update_success']); ?>
+                </div>
+            <?php endif; ?>
+            <?php if (isset($_SESSION['program_update_error'])): ?>
+                <div class="error-message">
+                    <?php echo $_SESSION['program_update_error']; unset($_SESSION['program_update_error']); ?>
+                </div>
+            <?php endif; ?>
+            <?php if (isset($_SESSION['program_create_success'])): ?>
+                <div class="success-message">
+                    <?php echo $_SESSION['program_create_success']; unset($_SESSION['program_create_success']); ?>
+                </div>
+            <?php endif; ?>
+            <?php if (isset($_SESSION['program_create_error'])): ?>
+                <div class="error-message">
+                    <?php echo $_SESSION['program_create_error']; unset($_SESSION['program_create_error']); ?>
+                </div>
+            <?php endif; ?>
+            <?php if (isset($_SESSION['programs_warning'])): ?>
+                <div class="error-message" style="background: rgba(245, 158, 11, 0.1); border-color: var(--warning-color);">
+                    <i class="fas fa-exclamation-triangle"></i> 
+                    <?php echo $_SESSION['programs_warning']; unset($_SESSION['programs_warning']); ?>
+                    <br><br>
+                    <strong>To fix this:</strong> Run the migration script: 
+                    <a href="migrate_add_academic_year.php" style="color: var(--primary-color); text-decoration: underline;" target="_blank">migrate_add_academic_year.php</a>
                 </div>
             <?php endif; ?>
 
@@ -3123,12 +3611,21 @@ unset($_SESSION['announcement_error']);
                                     <i class="fas fa-graduation-cap"></i>
                                 <select id="program_id" name="program_id" class="form-control" required>
                                     <option value="">Select a program</option>
-                                    <?php foreach ($scholarship_programs as $program): ?>
-                                        <option value="<?php echo htmlspecialchars($program['id']); ?>">
-                                            <?php echo htmlspecialchars($program['program_name']); ?>
-                                        </option>
-                                    <?php endforeach; ?>
+                                    <?php if (!empty($active_scholarship_programs)): ?>
+                                        <?php foreach ($active_scholarship_programs as $program): ?>
+                                            <option value="<?php echo htmlspecialchars($program['id']); ?>">
+                                                <?php echo htmlspecialchars($program['program_name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <option value="" disabled>No active programs available. Please create a program first.</option>
+                                    <?php endif; ?>
                                 </select>
+                                <?php if (empty($active_scholarship_programs)): ?>
+                                    <small style="color: var(--warning-color); display: block; margin-top: 0.5rem;">
+                                        <i class="fas fa-exclamation-triangle"></i> No active scholarship programs found. Go to "Manage Programs" to create one.
+                                    </small>
+                                <?php endif; ?>
                                 </div>
                             </div>
                         </div>
@@ -3270,12 +3767,21 @@ unset($_SESSION['announcement_error']);
                                             <i class="fas fa-graduation-cap"></i>
                                 <select id="edit-program_id" name="program_id" class="form-control" required>
                                     <option value="">Select a program</option>
-                                    <?php foreach ($scholarship_programs as $program): ?>
-                                        <option value="<?php echo htmlspecialchars($program['id']); ?>">
-                                            <?php echo htmlspecialchars($program['program_name']); ?>
-                                        </option>
-                                    <?php endforeach; ?>
+                                    <?php if (!empty($active_scholarship_programs)): ?>
+                                        <?php foreach ($active_scholarship_programs as $program): ?>
+                                            <option value="<?php echo htmlspecialchars($program['id']); ?>">
+                                                <?php echo htmlspecialchars($program['program_name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <option value="" disabled>No active programs available. Please create a program first.</option>
+                                    <?php endif; ?>
                                 </select>
+                                <?php if (empty($active_scholarship_programs)): ?>
+                                    <small style="color: var(--warning-color); display: block; margin-top: 0.5rem;">
+                                        <i class="fas fa-exclamation-triangle"></i> No active scholarship programs found. Go to "Manage Programs" to create one.
+                                    </small>
+                                <?php endif; ?>
                                     </div>
                                     </div>
                                 </div>
@@ -3480,6 +3986,7 @@ unset($_SESSION['announcement_error']);
 
     <script>
         function showDashboard() {
+            document.getElementById('manageProgramsSection').style.display = 'none';
             document.getElementById('dashboardContent').style.display = 'block';
             document.getElementById('adminForm').style.display = 'none';
             document.getElementById('manageAdmins').style.display = 'none';
@@ -3497,11 +4004,13 @@ unset($_SESSION['announcement_error']);
             document.getElementById('dashboardContent').style.display = 'none';
             document.getElementById('adminForm').style.display = 'block';
             document.getElementById('manageAdmins').style.display = 'none';
+            document.getElementById('manageProgramsSection').style.display = 'none';
             document.getElementById('announcementsSection').style.display = 'none';
             document.getElementById('analyticsSection').style.display = 'none';
             document.getElementById('dashboardLink').classList.remove('active');
             document.getElementById('registerAdminLink').classList.add('active');
             document.getElementById('manageAdminsLink').classList.remove('active');
+            document.getElementById('manageProgramsLink').classList.remove('active');
             document.getElementById('announcementsLink').classList.remove('active');
             document.getElementById('analyticsLink').classList.remove('active');
             hideAllEditForms();
@@ -3511,11 +4020,29 @@ unset($_SESSION['announcement_error']);
             document.getElementById('dashboardContent').style.display = 'none';
             document.getElementById('adminForm').style.display = 'none';
             document.getElementById('manageAdmins').style.display = 'block';
+            document.getElementById('manageProgramsSection').style.display = 'none';
             document.getElementById('announcementsSection').style.display = 'none';
             document.getElementById('analyticsSection').style.display = 'none';
             document.getElementById('dashboardLink').classList.remove('active');
             document.getElementById('registerAdminLink').classList.remove('active');
             document.getElementById('manageAdminsLink').classList.add('active');
+            document.getElementById('manageProgramsLink').classList.remove('active');
+            document.getElementById('announcementsLink').classList.remove('active');
+            document.getElementById('analyticsLink').classList.remove('active');
+            hideAllEditForms();
+        }
+        
+        function showManagePrograms() {
+            document.getElementById('dashboardContent').style.display = 'none';
+            document.getElementById('adminForm').style.display = 'none';
+            document.getElementById('manageAdmins').style.display = 'none';
+            document.getElementById('manageProgramsSection').style.display = 'block';
+            document.getElementById('announcementsSection').style.display = 'none';
+            document.getElementById('analyticsSection').style.display = 'none';
+            document.getElementById('dashboardLink').classList.remove('active');
+            document.getElementById('registerAdminLink').classList.remove('active');
+            document.getElementById('manageAdminsLink').classList.remove('active');
+            document.getElementById('manageProgramsLink').classList.add('active');
             document.getElementById('announcementsLink').classList.remove('active');
             document.getElementById('analyticsLink').classList.remove('active');
             hideAllEditForms();
@@ -3525,11 +4052,13 @@ unset($_SESSION['announcement_error']);
             document.getElementById('dashboardContent').style.display = 'none';
             document.getElementById('adminForm').style.display = 'none';
             document.getElementById('manageAdmins').style.display = 'none';
+            document.getElementById('manageProgramsSection').style.display = 'none';
             document.getElementById('announcementsSection').style.display = 'block';
             document.getElementById('analyticsSection').style.display = 'none';
             document.getElementById('dashboardLink').classList.remove('active');
             document.getElementById('registerAdminLink').classList.remove('active');
             document.getElementById('manageAdminsLink').classList.remove('active');
+            document.getElementById('manageProgramsLink').classList.remove('active');
             document.getElementById('announcementsLink').classList.add('active');
             document.getElementById('analyticsLink').classList.remove('active');
             hideAllEditForms();
@@ -3693,6 +4222,7 @@ unset($_SESSION['announcement_error']);
 
         // Show analytics section
         function showAnalytics() {
+            document.getElementById('manageProgramsSection').style.display = 'none';
             document.getElementById('dashboardContent').style.display = 'none';
             document.getElementById('adminForm').style.display = 'none';
             document.getElementById('manageAdmins').style.display = 'none';

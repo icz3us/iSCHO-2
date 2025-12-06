@@ -174,12 +174,37 @@ class OCRService {
         
         $text = strtolower($extracted_text);
         
+        // Enhanced date patterns for Philippine documents
+        $date_patterns = [
+            // Standard date formats
+            '/(?:date|date of issue|issued|date issued)[\s:]*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/i',
+            // Month name formats
+            '/(?:date|date of issue|issued)[\s:]*((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})/i',
+            // Year patterns for academic documents
+            '/(?:school year|academic year|sy|ay)[\s:]*(\d{4})[\/\-]?(\d{4})?/i',
+            // Standalone dates
+            '/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/',
+            // Year only (for academic year documents)
+            '/\b(20\d{2})\b/',
+        ];
+        
+        $dates_found = [];
+        foreach ($date_patterns as $pattern) {
+            if (preg_match_all($pattern, $extracted_text, $matches, PREG_SET_ORDER)) {
+                foreach ($matches as $match) {
+                    $date_str = trim($match[0]);
+                    if (!in_array($date_str, $dates_found)) {
+                        $dates_found[] = $date_str;
+                    }
+                }
+            }
+        }
+        
         // Common patterns to look for in documents
         $patterns = [
             'name' => '/(?:name|n?ame)[\s:]*([a-z\s,\.]+?)(?=\n|$|id|tel|phone)/i',
             'id' => '/(?:id|id number|identification)[\s:]*([a-z0-9\-\/]+)/i',
             'address' => '/(?:address|add?r?ess)[\s:]*([a-z0-9\s,\.]+?)(?=\n|$)/i',
-            'date' => '/(?:date|date of issue|issued)[\s:]*(\d{1,2}[\s\/\-]\d{1,2}[\s\/\-]\d{2,4})/i',
             'signature' => '/(?:signature|sig\.?|signed)/i',
         ];
         
@@ -190,9 +215,23 @@ class OCRService {
             }
         }
         
+        // Add dates to extracted values
+        if (!empty($dates_found)) {
+            $info['extracted_keys'][] = 'dates';
+            $info['extracted_values']['dates'] = $dates_found;
+            $info['extracted_values']['date'] = $dates_found[0]; // First date for backward compatibility
+        }
+        
         // Check for specific document indicators
         if ($document_type === 'cor') {
             $info['is_cor'] = preg_match('/certificate|registry|record/i', $extracted_text) ? true : false;
+            // Look for semester/year info in COR
+            if (preg_match('/(?:semester|sem\.?|term)[\s:]*(\d)/i', $extracted_text, $sem_match)) {
+                $info['extracted_values']['semester'] = $sem_match[1];
+            }
+            if (preg_match('/(?:school year|academic year|sy)[\s:]*(\d{4})[\/\-]?(\d{4})?/i', $extracted_text, $sy_match)) {
+                $info['extracted_values']['school_year'] = $sy_match[0];
+            }
         } elseif ($document_type === 'voter') {
             $info['is_voter'] = preg_match('/voter|commission on elections|comelec/i', $extracted_text) ? true : false;
         } elseif ($document_type === 'indigency') {

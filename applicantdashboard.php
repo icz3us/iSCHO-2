@@ -182,11 +182,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
 
     // Residency Information
     $permanent_address = trim($_POST['permanent_address'] ?? '');
-    $residency_duration = trim($_POST['residency_duration'] ?? '');
-    $registered_voter = trim($_POST['registered_voter'] ?? '');
-    $father_voting_duration = trim($_POST['father_voting_duration'] ?? null);
-    $mother_voting_duration = trim($_POST['mother_voting_duration'] ?? null);
-    $applicant_voting_duration = trim($_POST['applicant_voting_duration'] ?? null);
     $guardian_name = trim($_POST['guardian_name'] ?? '');
     $relationship = trim($_POST['relationship'] ?? '');
     $guardian_address = trim($_POST['guardian_address'] ?? '');
@@ -231,8 +226,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
         'course' => $course,
         'current_college' => $current_college,
         'permanent_address' => $permanent_address,
-        'residency_duration' => $residency_duration,
-        'registered_voter' => $registered_voter,
         'guardian_name' => $guardian_name,
         'relationship' => $relationship,
         'guardian_address' => $guardian_address,
@@ -266,9 +259,11 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
     // Secure File Upload Handling
     require_once './utils/file_security.php';
     require_once './utils/document_verification.php';
+    require_once './utils/data_validation.php';
     
     $fileSecurity = new FileSecurity($pdo);
     $docVerification = new DocumentVerification($pdo);
+    $dataValidation = new DataValidation($pdo);
     
     $upload_error = '';
     $file_paths = [
@@ -396,14 +391,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 } else {
                     $stmt = $pdo->prepare("
                         INSERT INTO user_residency (
-                            user_id, permanent_address, residency_duration, registered_voter,
-                            father_voting_duration, mother_voting_duration, applicant_voting_duration,
+                            user_id, permanent_address,
                             guardian_name, relationship, guardian_address, guardian_contact
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?)
                     ");
                     $stmt->execute([
-                        $user_id, $permanent_address, $residency_duration, $registered_voter,
-                        $father_voting_duration, $mother_voting_duration, $applicant_voting_duration,
+                        $user_id, $permanent_address,
                         $guardian_name, $relationship, $guardian_address, $guardian_contact
                     ]);
                 }
@@ -494,14 +487,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 // Insert into user_residency
                 $stmt = $pdo->prepare("
                     INSERT INTO user_residency (
-                        user_id, permanent_address, residency_duration, registered_voter,
-                        father_voting_duration, mother_voting_duration, applicant_voting_duration,
+                        user_id, permanent_address,
                         guardian_name, relationship, guardian_address, guardian_contact
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
-                    $user_id, $permanent_address, $residency_duration, $registered_voter,
-                    $father_voting_duration, $mother_voting_duration, $applicant_voting_duration,
+                    $user_id, $permanent_address,
                     $guardian_name, $relationship, $guardian_address, $guardian_contact
                 ]);
 
@@ -1270,89 +1261,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="residency-duration">No. of Months/Years of Residency <span class="required">*</span></label>
-                        <div class="input-group">
-                            <i class="fas fa-clock"></i>
-                            <input type="text" id="residency-duration" name="residency_duration" class="form-control" value="<?php echo htmlspecialchars($user_residency['residency_duration'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Are you and your parents a registered voter? <span class="required">*</span></label>
-                        <div class="radio-group">
-                            <label><input type="radio" name="registered_voter" value="yes" <?php echo (isset($user_residency['registered_voter']) && $user_residency['registered_voter'] === 'yes') ? 'checked' : ''; ?> required <?php echo !$is_application_open ? 'disabled' : ''; ?>> Yes</label>
-                            <label><input type="radio" name="registered_voter" value="no" <?php echo (isset($user_residency['registered_voter']) && $user_residency['registered_voter'] === 'no') ? 'checked' : ''; ?> <?php echo !$is_application_open ? 'disabled' : ''; ?>> No</label>
-                            <label><input type="radio" name="registered_voter" value="guardian" <?php echo (isset($user_residency['registered_voter']) && $user_residency['registered_voter'] === 'guardian') ? 'checked' : ''; ?> <?php echo !$is_application_open ? 'disabled' : ''; ?>> Parents Only</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <h4 for="residency-length">If Yes, How Long?</h4>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="father_voting_duration">Father</label>
-                        <div class="input-group">
-                            <i class="fas fa-clock"></i>
-                            <select id="father_voting_duration" name="father_voting_duration" class="form-control" style="padding-left: 2.5rem;" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                <option value="">Choose</option>
-                                <option value="1" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '1') ? 'selected' : ''; ?>>1</option>
-                                <option value="2" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '2') ? 'selected' : ''; ?>>2</option>
-                                <option value="3" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '3') ? 'selected' : ''; ?>>3</option>
-                                <option value="4" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '4') ? 'selected' : ''; ?>>4</option>
-                                <option value="5" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '5') ? 'selected' : ''; ?>>5</option>
-                                <option value="6" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '6') ? 'selected' : ''; ?>>6</option>
-                                <option value="7" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '7') ? 'selected' : ''; ?>>7</option>
-                                <option value="8" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '8') ? 'selected' : ''; ?>>8</option>
-                                <option value="9" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '9') ? 'selected' : ''; ?>>9</option>
-                                <option value="10+" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '10+') ? 'selected' : ''; ?>>10+</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="mother_voting_duration">Mother</label>
-                        <div class="input-group">
-                            <i class="fas fa-clock"></i>
-                            <select id="mother_voting_duration" name="mother_voting_duration" class="form-control" style="padding-left: 2.5rem;" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                <option value="">Choose</option>
-                                <option value="1" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '1') ? 'selected' : ''; ?>>1</option>
-                                <option value="2" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '2') ? 'selected' : ''; ?>>2</option>
-                                <option value="3" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '3') ? 'selected' : ''; ?>>3</option>
-                                <option value="4" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '4') ? 'selected' : ''; ?>>4</option>
-                                <option value="5" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '5') ? 'selected' : ''; ?>>5</option>
-                                <option value="6" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '6') ? 'selected' : ''; ?>>6</option>
-                                <option value="7" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '7') ? 'selected' : ''; ?>>7</option>
-                                <option value="8" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '8') ? 'selected' : ''; ?>>8</option>
-                                <option value="9" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '9') ? 'selected' : ''; ?>>9</option>
-                                <option value="10+" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '10+') ? 'selected' : ''; ?>>10+</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="applicant_voting_duration">Applicant</label>
-                        <div class="input-group">
-                            <i class="fas fa-clock"></i>
-                            <select id="applicant_voting_duration" name="applicant_voting_duration" class="form-control" style="padding-left: 2.5rem;" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                <option value="">Choose</option>
-                                <option value="1" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '1') ? 'selected' : ''; ?>>1</option>
-                                <option value="2" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '2') ? 'selected' : ''; ?>>2</option>
-                                <option value="3" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '3') ? 'selected' : ''; ?>>3</option>
-                                <option value="4" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '4') ? 'selected' : ''; ?>>4</option>
-                                <option value="5" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '5') ? 'selected' : ''; ?>>5</option>
-                                <option value="6" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '6') ? 'selected' : ''; ?>>6</option>
-                                <option value="7" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '7') ? 'selected' : ''; ?>>7</option>
-                                <option value="8" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '8') ? 'selected' : ''; ?>>8</option>
-                                <option value="9" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '9') ? 'selected' : ''; ?>>9</option>
-                                <option value="10+" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '10+') ? 'selected' : ''; ?>>10+</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
                         <h4>Guardian Information</h4>
                     </div>
                 </div>
@@ -1485,7 +1393,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             </div>
                         </div>
                     </div>
-                    <div class="family-member">
+                    <div class="family-member" style="width: 100%; margin-top: 1.5rem;">
                         <h4>Mother</h4>
                         <div class="form-row">
                             <div class="form-group">
@@ -1674,11 +1582,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <div class="form-group full-width">
                         <h4>Residency</h4>
                         <p><strong>Permanent Address:</strong> <span id="review_permanent_address"><?php echo htmlspecialchars($user_residency['permanent_address'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Residency Duration:</strong> <span id="review_residency_duration"><?php echo htmlspecialchars($user_residency['residency_duration'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Registered Voter:</strong> <span id="review_registered_voter"><?php echo htmlspecialchars($user_residency['registered_voter'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Father Voting Duration:</strong> <span id="review_father_voting_duration"><?php echo htmlspecialchars($user_residency['father_voting_duration'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Mother Voting Duration:</strong> <span id="review_mother_voting_duration"><?php echo htmlspecialchars($user_residency['mother_voting_duration'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Applicant Voting Duration:</strong> <span id="review_applicant_voting_duration"><?php echo htmlspecialchars($user_residency['applicant_voting_duration'] ?? 'Not provided'); ?></span></p>
                         <h5>Guardian Information</h5>
                         <p><strong>Name:</strong> <span id="review_guardian_name"><?php echo htmlspecialchars($user_residency['guardian_name'] ?? 'Not provided'); ?></span></p>
                         <p><strong>Relationship:</strong> <span id="review_relationship"><?php echo htmlspecialchars($user_residency['relationship'] ?? 'Not provided'); ?></span></p>
@@ -1946,12 +1849,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // Residency
         document.getElementById('review_permanent_address').textContent = document.getElementById('permanent-address').value || 'Not provided';
-        document.getElementById('review_residency_duration').textContent = document.getElementById('residency-duration').value || 'Not provided';
-        const registeredVoter = document.querySelector('input[name="registered_voter"]:checked');
-        document.getElementById('review_registered_voter').textContent = registeredVoter ? registeredVoter.value : 'Not provided';
-        document.getElementById('review_father_voting_duration').textContent = document.getElementById('father_voting_duration').value || 'Not provided';
-        document.getElementById('review_mother_voting_duration').textContent = document.getElementById('mother_voting_duration').value || 'Not provided';
-        document.getElementById('review_applicant_voting_duration').textContent = document.getElementById('applicant_voting_duration').value || 'Not provided';
         document.getElementById('review_guardian_name').textContent = document.getElementById('guardian_name').value || 'Not provided';
         document.getElementById('review_relationship').textContent = document.getElementById('relationship').value || 'Not provided';
         document.getElementById('review_guardian_address').textContent = document.getElementById('guardian_address').value || 'Not provided';
@@ -2037,12 +1934,167 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         });
     }
 
+    // Document validation system
+    let currentProgramId = null;
+    let documentValidationResults = {};
+    
+    // Get program ID when program is selected (reuse existing programSelect if available)
+    const programSelectForValidation = document.getElementById('program_id');
+    if (programSelectForValidation) {
+        programSelectForValidation.addEventListener('change', function() {
+            currentProgramId = this.value;
+            // Clear previous validation results when program changes
+            documentValidationResults = {};
+            clearDocumentValidationMessages();
+        });
+        currentProgramId = programSelectForValidation.value;
+    }
+    
+    // Enhanced file upload with validation
     document.querySelectorAll('.file-upload-group input[type="file"]').forEach(input => {
         input.addEventListener('change', function() {
             const fileName = this.files.length > 0 ? this.files[0].name : 'No file chosen';
-            this.nextElementSibling.nextElementSibling.textContent = fileName;
+            const fileNameSpan = this.nextElementSibling.nextElementSibling;
+            if (fileNameSpan) {
+                fileNameSpan.textContent = fileName;
+            }
+            
+            // Validate document if it's a required document (not profile picture)
+            if (this.files.length > 0 && this.id !== 'profile_picture') {
+                validateDocumentFile(this);
+            } else {
+                // Clear validation message if file is removed
+                clearValidationMessage(this.id);
+            }
         });
     });
+    
+    /**
+     * Validate document file against scholarship academic year
+     */
+    async function validateDocumentFile(fileInput) {
+        const file = fileInput.files[0];
+        if (!file) return;
+        
+        const documentType = fileInput.id.replace('_file', '');
+        const fileKey = fileInput.id;
+        
+        // Show loading state
+        showValidationLoading(fileKey);
+        
+        try {
+            // Read file as data URL for potential OCR (if needed in future)
+            // For now, we'll validate after OCR is done by admin
+            // But we can show a warning about date requirements
+            
+            // Get program academic year info
+            if (currentProgramId) {
+                const response = await fetch(`ajax_document_validation.php?action=get_program_academic_year&program_id=${currentProgramId}`);
+                const data = await response.json();
+                
+                if (data.success && data.program) {
+                    const program = data.program;
+                    if (program.academic_year) {
+                        showValidationInfo(fileKey, `Please ensure this document is from academic year ${program.academic_year}. The document date will be verified during review.`);
+                    } else {
+                        showValidationInfo(fileKey, 'Document uploaded. Date validation will be performed during admin review.');
+                    }
+                } else {
+                    showValidationInfo(fileKey, 'Document uploaded. Date validation will be performed during admin review.');
+                }
+            } else {
+                showValidationWarning(fileKey, 'Please select a scholarship program first to enable date validation.');
+            }
+            
+        } catch (error) {
+            console.error('Validation error:', error);
+            showValidationInfo(fileKey, 'Document uploaded. Date validation will be performed during admin review.');
+        }
+    }
+    
+    /**
+     * Show validation loading state
+     */
+    function showValidationLoading(fileKey) {
+        const validationDiv = getOrCreateValidationDiv(fileKey);
+        validationDiv.className = 'document-validation-message validation-loading';
+        validationDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validating document...';
+    }
+    
+    /**
+     * Show validation info message
+     */
+    function showValidationInfo(fileKey, message) {
+        const validationDiv = getOrCreateValidationDiv(fileKey);
+        validationDiv.className = 'document-validation-message validation-info';
+        validationDiv.innerHTML = '<i class="fas fa-info-circle"></i> ' + escapeHtml(message);
+        documentValidationResults[fileKey] = { valid: true, message: message, type: 'info' };
+    }
+    
+    /**
+     * Show validation warning message
+     */
+    function showValidationWarning(fileKey, message) {
+        const validationDiv = getOrCreateValidationDiv(fileKey);
+        validationDiv.className = 'document-validation-message validation-warning';
+        validationDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + escapeHtml(message);
+        documentValidationResults[fileKey] = { valid: false, message: message, type: 'warning' };
+    }
+    
+    /**
+     * Show validation error message
+     */
+    function showValidationError(fileKey, message) {
+        const validationDiv = getOrCreateValidationDiv(fileKey);
+        validationDiv.className = 'document-validation-message validation-error';
+        validationDiv.innerHTML = '<i class="fas fa-times-circle"></i> ' + escapeHtml(message);
+        documentValidationResults[fileKey] = { valid: false, message: message, type: 'error' };
+    }
+    
+    /**
+     * Clear validation message
+     */
+    function clearValidationMessage(fileKey) {
+        const validationDiv = document.getElementById('validation-' + fileKey);
+        if (validationDiv) {
+            validationDiv.remove();
+        }
+        delete documentValidationResults[fileKey];
+    }
+    
+    /**
+     * Clear all validation messages
+     */
+    function clearDocumentValidationMessages() {
+        document.querySelectorAll('.document-validation-message').forEach(div => {
+            div.remove();
+        });
+        documentValidationResults = {};
+    }
+    
+    /**
+     * Get or create validation message div
+     */
+    function getOrCreateValidationDiv(fileKey) {
+        let validationDiv = document.getElementById('validation-' + fileKey);
+        if (!validationDiv) {
+            validationDiv = document.createElement('div');
+            validationDiv.id = 'validation-' + fileKey;
+            validationDiv.className = 'document-validation-message';
+            
+            // Find the file input and insert after its parent container
+            const fileInput = document.getElementById(fileKey);
+            if (fileInput) {
+                const fileUploadGroup = fileInput.closest('.file-upload-group');
+                if (fileUploadGroup) {
+                    fileUploadGroup.parentNode.insertBefore(validationDiv, fileUploadGroup.nextSibling);
+                } else {
+                    fileInput.parentNode.appendChild(validationDiv);
+                }
+            }
+        }
+        return validationDiv;
+    }
 
     document.querySelector('.profile-pic').addEventListener('click', function() {
         if (!<?php echo json_encode(!$is_application_open); ?>) {
@@ -2086,6 +2138,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 </script>
 <style>
+/* Document Validation Styles */
+.document-validation-message {
+    margin-top: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    animation: slideIn 0.3s ease-out;
+}
+
+.document-validation-message i {
+    font-size: 1rem;
+}
+
+.validation-loading {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    color: var(--primary-color);
+}
+
+.validation-info {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #60a5fa;
+}
+
+.validation-warning {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+}
+
+.validation-error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Family Background Layout - Vertical Stack */
+.family-background {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 2rem;
+    width: 100%;
+}
+
+.family-member {
+    width: 100% !important;
+    background: var(--bg-gradient-card);
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-md);
+    margin-bottom: 0;
+}
+
+.family-member h4 {
+    margin-bottom: 1.5rem;
+    color: var(--text-bright);
+    font-size: 1.2rem;
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 0.5rem;
+}
+
 .faqs-content { 
     background: var(--bg-gradient-card); 
     backdrop-filter: blur(10px);
@@ -2337,66 +2466,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Add N/A option to voting duration dropdowns
-    const votingDurationDropdowns = ['father_voting_duration', 'mother_voting_duration', 'applicant_voting_duration'];
-    votingDurationDropdowns.forEach(id => {
-        const select = document.getElementById(id);
-        if (select) {
-            const naOption = document.createElement('option');
-            naOption.value = 'N/A';
-            naOption.textContent = 'N/A';
-            select.appendChild(naOption);
-        }
-    });
-
-    // Handle registered voter radio button selection
-    const registeredVoterRadios = document.querySelectorAll('input[name="registered_voter"]');
-    registeredVoterRadios.forEach(radio => {
-        radio.addEventListener('change', function() {
-            const votingDurationDropdowns = [
-                document.getElementById('father_voting_duration'),
-                document.getElementById('mother_voting_duration'),
-                document.getElementById('applicant_voting_duration')
-            ];
-
-            if (this.value === 'no') {
-                // If "No" is selected, disable dropdowns and set to N/A
-                votingDurationDropdowns.forEach(dropdown => {
-                    if (dropdown) {
-                        dropdown.disabled = true;
-                        dropdown.value = 'N/A';
-                    }
-                });
-            } else {
-                // If "Yes" or "Guardian Only" is selected, enable dropdowns
-                votingDurationDropdowns.forEach(dropdown => {
-                    if (dropdown) {
-                        dropdown.disabled = false;
-                        // Reset to empty selection if it was N/A
-                        if (dropdown.value === 'N/A') {
-                            dropdown.value = '';
-                        }
-                    }
-                });
-            }
-        });
-    });
-
-    // Initial state check
-    const selectedVoterOption = document.querySelector('input[name="registered_voter"]:checked');
-    if (selectedVoterOption && selectedVoterOption.value === 'no') {
-        const votingDurationDropdowns = [
-            document.getElementById('father_voting_duration'),
-            document.getElementById('mother_voting_duration'),
-            document.getElementById('applicant_voting_duration')
-        ];
-        votingDurationDropdowns.forEach(dropdown => {
-            if (dropdown) {
-                dropdown.disabled = true;
-                dropdown.value = 'N/A';
-            }
-        });
-    }
 });
 
    if ('serviceWorker' in navigator) {
