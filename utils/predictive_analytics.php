@@ -548,7 +548,14 @@ class PredictiveAnalytics {
      */
     private function generateAIRecommendations($analyticsData, $programId = null) {
         try {
-            $apiKey = 'AIzaSyAFROmTOC9U9JGwiR7YZUyYtoK3bRSJhhg';
+            // Load API key from environment
+            $apiKey = '';
+            if (file_exists(__DIR__ . '/../.env')) {
+                $env = parse_ini_file(__DIR__ . '/../.env');
+                if (isset($env['GEMINI_API_KEY'])) {
+                    $apiKey = $env['GEMINI_API_KEY'];
+                }
+            }
             
             if (empty($apiKey)) {
                 throw new Exception('Gemini API key not configured');

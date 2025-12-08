@@ -1,0 +1,22 @@
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+
+# Cache
+cache/
+
+# Uploaded files
+uploads/
+claim_photos/
+qrcodes/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+Thumbs.db
+.DS_Store

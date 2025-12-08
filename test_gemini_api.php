@@ -3,6 +3,15 @@ require './connect/connection.php';
 require './utils/predictive_analytics.php';
 require_once 'vendor/autoload.php';
 
+// Load environment variables
+$apiKey = '';
+if (file_exists('.env')) {
+    $env = parse_ini_file('.env');
+    if (isset($env['GEMINI_API_KEY'])) {
+        $apiKey = $env['GEMINI_API_KEY'];
+    }
+}
+
 use GeminiAPI\Client;
 use GeminiAPI\Resources\Parts\TextPart;
 
@@ -10,7 +19,6 @@ try {
     echo "Testing Gemini API connection...\n";
     
     // Test the API key
-    $apiKey = 'AIzaSyAkz3y_IzDYSMhebKYv_FLiAF60ktZAH1w';
     if (empty($apiKey)) {
         echo "Error: API key is not configured\n";
         exit;

@@ -2,6 +2,14 @@
 // Gemini AI Chatbot API Endpoint using official PHP client
 require_once 'vendor/autoload.php';
 
+// Load environment variables
+if (file_exists('.env')) {
+    $env = parse_ini_file('.env');
+    if (isset($env['GEMINI_API_KEY'])) {
+        define('GEMINI_API_KEY', $env['GEMINI_API_KEY']);
+    }
+}
+
 use GeminiAPI\Client;
 use GeminiAPI\Resources\Parts\TextPart;
 
@@ -10,10 +18,6 @@ header('Content-Type: application/json');
 // Turn off error reporting to prevent PHP errors from interfering with JSON response
 error_reporting(0);
 ini_set('display_errors', 0);
-
-// Get the API key from environment variable or config (you'll need to set this up)
-// For now, we'll use a placeholder - you'll need to get an actual API key from Google AI Studio
-define('GEMINI_API_KEY', 'AIzaSyAFROmTOC9U9JGwiR7YZUyYtoK3bRSJhhg');
 
 // Only allow POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -25,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // Check if API key is set
 if (empty(GEMINI_API_KEY)) {
     http_response_code(400);
-    echo json_encode(['error' => 'Please set your Gemini API key in chatbot_api.php']);
+    echo json_encode(['error' => 'Please set your Gemini API key in the .env file']);
     exit;
 }
 
