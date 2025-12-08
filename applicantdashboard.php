@@ -38,6 +38,78 @@ $has_application = false;
 $application_deadline = null;
 $is_application_open = false;
 $application_status = 'Not Yet Submitted';
+
+/**
+ * Check if a scholarship program is currently available for application
+ * @param string|null $start_date Application start date (YYYY-MM-DD)
+ * @param string|null $end_date Application end date (YYYY-MM-DD)
+ * @return bool True if the program is available, false otherwise
+ */
+function isProgramAvailable($start_date, $end_date) {
+    // If both dates are null, the program is always available
+    if (empty($start_date) && empty($end_date)) {
+        return true;
+    }
+    
+    $today = date('Y-m-d');
+    
+    // If start date is not set, check only end date
+    if (empty($start_date)) {
+        return empty($end_date) || $today <= $end_date;
+    }
+    
+    // If end date is not set, check only start date
+    if (empty($end_date)) {
+        return $today >= $start_date;
+    }
+    
+    // Both dates are set, check if today is within the application period
+    return $today >= $start_date && $today <= $end_date;
+}
+
+/**
+ * Get a descriptive message about program availability
+ * @param string|null $start_date Application start date (YYYY-MM-DD)
+ * @param string|null $end_date Application end date (YYYY-MM-DD)
+ * @return string Availability message
+ */
+function getProgramAvailabilityMessage($start_date, $end_date) {
+    // If both dates are null, the program is always available
+    if (empty($start_date) && empty($end_date)) {
+        return 'Open for application';
+    }
+    
+    $today = date('Y-m-d');
+    
+    // If start date is not set
+    if (empty($start_date)) {
+        if (empty($end_date)) {
+            return 'Open for application';
+        } elseif ($today > $end_date) {
+            return 'Application period has ended on ' . date('M d, Y', strtotime($end_date));
+        } else {
+            return 'Open for application until ' . date('M d, Y', strtotime($end_date));
+        }
+    }
+    
+    // If end date is not set
+    if (empty($end_date)) {
+        if ($today < $start_date) {
+            return 'Application starts on ' . date('M d, Y', strtotime($start_date));
+        } else {
+            return 'Open for application';
+        }
+    }
+    
+    // Both dates are set
+    if ($today < $start_date) {
+        return 'Application starts on ' . date('M d, Y', strtotime($start_date));
+    } elseif ($today > $end_date) {
+        return 'Application period has ended on ' . date('M d, Y', strtotime($end_date));
+    } else {
+        return 'Open for application until ' . date('M d, Y', strtotime($end_date));
+    }
+}
 $notices = [];
 $claim_status = 'Not Claimed';
 $claim_photo_path = '';
@@ -125,9 +197,17 @@ $formatted_deadline = $application_deadline ? date('m/d/Y', strtotime($applicati
 // Fetch all active scholarship programs
 $scholarship_programs = [];
 try {
-    $stmt = $pdo->prepare("SELECT id, program_name, program_description FROM scholarship_programs WHERE is_active = 1 ORDER BY program_name");
+    // Fetch all active scholarship programs with application dates
+    $stmt = $pdo->prepare("SELECT id, program_name, program_description, application_start_date, application_end_date FROM scholarship_programs WHERE is_active = 1 ORDER BY program_name");
     $stmt->execute();
     $scholarship_programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Add availability status to each program
+    foreach ($scholarship_programs as &$program) {
+        $program['is_available'] = isProgramAvailable($program['application_start_date'], $program['application_end_date']);
+        $program['availability_message'] = getProgramAvailabilityMessage($program['application_start_date'], $program['application_end_date']);
+    }
+    unset($program); // Break the reference
 } catch (PDOException $e) {
     error_log("Error fetching programs: " . $e->getMessage());
 }
@@ -160,6 +240,23 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
     
     if (empty($program_id)) {
         $_SESSION['application_error'] = "Please select a scholarship program.";
+        header('Location: applicantdashboard.php?view=Application');
+        exit;
+    }
+    
+    // Check if the selected program is available for application
+    $stmt = $pdo->prepare("SELECT application_start_date, application_end_date FROM scholarship_programs WHERE id = ? AND is_active = 1");
+    $stmt->execute([$program_id]);
+    $program = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$program) {
+        $_SESSION['application_error'] = "Selected scholarship program is not available.";
+        header('Location: applicantdashboard.php?view=Application');
+        exit;
+    }
+    
+    if (!isProgramAvailable($program['application_start_date'], $program['application_end_date'])) {
+        $_SESSION['application_error'] = "The selected scholarship program is not currently accepting applications: " . getProgramAvailabilityMessage($program['application_start_date'], $program['application_end_date']);
         header('Location: applicantdashboard.php?view=Application');
         exit;
     }
@@ -1049,10 +1146,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <option value="">Select a scholarship program</option>
                                 <?php foreach ($scholarship_programs as $program): ?>
                                     <option value="<?php echo htmlspecialchars($program['id']); ?>" 
-                                        <?php echo ($user_program_id == $program['id']) ? 'selected' : ''; ?>>
+                                        <?php echo ($user_program_id == $program['id']) ? 'selected' : ''; ?>
+                                        <?php if (!$program['is_available']): ?>disabled<?php endif; ?>>
                                         <?php echo htmlspecialchars($program['program_name']); ?>
                                         <?php if (!empty($program['program_description'])): ?>
                                             - <?php echo htmlspecialchars($program['program_description']); ?>
+                                        <?php endif; ?>
+                                        <?php if (!$program['is_available']): ?>
+                                            (<?php echo htmlspecialchars($program['availability_message']); ?>)
                                         <?php endif; ?>
                                     </option>
                                 <?php endforeach; ?>
@@ -1791,6 +1892,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // Load requirements when program selection changes
     if (programSelect) {
         programSelect.addEventListener('change', function() {
+            // Remove any existing availability message
+            const existingMsg = document.getElementById('program-availability-message');
+            if (existingMsg) {
+                existingMsg.remove();
+            }
+            
+            // Get selected option
+            const selectedOption = this.options[this.selectedIndex];
+            
+            // Check if the selected program is disabled (unavailable)
+            if (selectedOption.disabled) {
+                // Extract the availability message from the option text
+                const optionText = selectedOption.textContent;
+                const match = optionText.match(/\(([^)]+)\)/);
+                if (match) {
+                    // Create and show availability message
+                    const messageDiv = document.createElement('div');
+                    messageDiv.id = 'program-availability-message';
+                    messageDiv.className = 'alert alert-warning';
+                    messageDiv.innerHTML = `
+                        <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 12px; border-radius: 4px; margin-top: 10px;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>Program Unavailable:</strong> ${match[1]}
+                        </div>
+                    `;
+                    this.parentNode.parentNode.appendChild(messageDiv);
+                }
+            }
+            
             loadProgramRequirements(this.value);
         });
         

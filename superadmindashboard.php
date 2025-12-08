@@ -264,7 +264,13 @@ if (empty($full_name) || $full_name === ',') {
 $total_applicants = 0;
 $approved_applicants = 0;
 $denied_applicants = 0;
+$pending_applicants = 0;
 $total_admins = 0;
+$total_program_count = 0;
+$active_program_count = 0;
+$inactive_program_count = 0;
+$open_programs_count = 0;
+$program_analytics = [];
 
 try {
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'Applicant'");
@@ -278,6 +284,10 @@ try {
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Denied'");
     $stmt->execute();
     $denied_applicants = $stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status IS NULL OR application_status = 'Under Review'");
+    $stmt->execute();
+    $pending_applicants = $stmt->fetchColumn();
 
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'Admin'");
     $stmt->execute();
@@ -382,6 +392,47 @@ try {
     $has_academic_year_columns = false;
     $scholarship_programs = [];
     $active_scholarship_programs = [];
+}
+
+$total_program_count = count($scholarship_programs);
+$today = date('Y-m-d');
+foreach ($scholarship_programs as $program) {
+    $is_active = (int)($program['is_active'] ?? 0) === 1;
+    if ($is_active) {
+        $active_program_count++;
+        $start = !empty($program['application_start_date']) ? strtotime($program['application_start_date']) : null;
+        $end = !empty($program['application_end_date']) ? strtotime($program['application_end_date']) : null;
+        $today_ts = strtotime($today);
+        if ($start && $end && $today_ts >= $start && $today_ts <= $end) {
+            $open_programs_count++;
+        }
+    } else {
+        $inactive_program_count++;
+    }
+}
+
+try {
+    $stmt = $pdo->prepare("
+        SELECT 
+            sp.id,
+            sp.program_name,
+            sp.is_active,
+            sp.academic_year,
+            sp.application_start_date,
+            sp.application_end_date,
+            COUNT(ui.user_id) AS total_applicants,
+            SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) AS approved_applicants,
+            SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) AS denied_applicants,
+            SUM(CASE WHEN ui.application_status IS NULL OR ui.application_status = 'Under Review' THEN 1 ELSE 0 END) AS pending_applicants
+        FROM scholarship_programs sp
+        LEFT JOIN users_info ui ON ui.program_id = sp.id
+        GROUP BY sp.id, sp.program_name, sp.is_active, sp.academic_year, sp.application_start_date, sp.application_end_date
+        ORDER BY sp.is_active DESC, sp.program_name
+    ");
+    $stmt->execute();
+    $program_analytics = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Error fetching program analytics: " . $e->getMessage());
 }
 
 // Handle new scholarship program creation
@@ -1339,6 +1390,154 @@ unset($_SESSION['announcement_error']);
             opacity: 0.15;
         }
 
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .stat-card.total h3,
+        .stat-card.total .stat-value {
+            background: var(--bg-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-card.total .icon {
+            color: var(--primary-color);
+        }
+
+        .stat-card.approved h3,
+        .stat-card.approved .stat-value {
+            background: var(--gradient-success);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-card.approved .icon {
+            color: var(--success-color);
+        }
+
+        .stat-card.pending h3,
+        .stat-card.pending .stat-value {
+            background: linear-gradient(135deg, #f59e0b, #f97316);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-card.pending .icon {
+            color: #f59e0b;
+        }
+
+        .stat-card.denied h3,
+        .stat-card.denied .stat-value {
+            background: linear-gradient(45deg, var(--error-color), #dc2626);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-card.denied .icon {
+            color: var(--error-color);
+        }
+
+        .stat-card.programs .icon {
+            color: #22d3ee;
+        }
+
+        .stat-card.active-programs .icon {
+            color: var(--success-color);
+        }
+
+        .stat-card.open-programs .icon {
+            color: #f59e0b;
+        }
+
+        .stat-card.admin-total .icon {
+            color: #8b5cf6;
+        }
+
+        .program-analytics {
+            margin-bottom: 2rem;
+        }
+
+        .program-analytics .table-container {
+            margin-top: 1rem;
+            background: var(--bg-gradient-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: var(--shadow-md);
+        }
+
+        .program-analytics table {
+            width: 100%;
+            border-collapse: collapse;
+            color: var(--text-color);
+        }
+
+        .program-analytics th,
+        .program-analytics td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+            font-size: 0.95rem;
+        }
+
+        .program-analytics th {
+            color: var(--text-bright);
+            font-weight: 600;
+        }
+
+        .program-analytics tr:last-child td {
+            border-bottom: none;
+        }
+
+        .program-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            border: 1px solid;
+        }
+
+        .program-status-badge.active {
+            color: var(--success-color);
+            border-color: rgba(34, 197, 94, 0.4);
+            background: rgba(34, 197, 94, 0.08);
+        }
+
+        .program-status-badge.inactive {
+            color: var(--error-color);
+            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.08);
+        }
+
+        .program-analytics .muted {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .program-analytics .breakdown {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .program-analytics .tag {
+            display: inline-block;
+            padding: 0.3rem 0.6rem;
+            border-radius: 8px;
+            background: rgba(99, 102, 241, 0.08);
+            color: var(--primary-color);
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
         .section {
             background: var(--bg-gradient-card);
             backdrop-filter: blur(10px);
@@ -1373,44 +1572,6 @@ unset($_SESSION['announcement_error']);
             color: var(--primary-color);
         }
 
-        .deadline-card {
-            background: var(--bg-gradient);
-            padding: 2.5rem;
-            border-radius: 24px;
-            color: white;
-            margin-bottom: 2rem;
-            box-shadow: var(--shadow-xl);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .deadline-card::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-            animation: rotate 15s linear infinite;
-        }
-
-        @keyframes rotate {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .deadline-card h3 {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .deadline-card p {
-            opacity: 0.9;
-            font-size: 1.1rem;
-            margin-bottom: 1.5rem;
-        }
 
         .form-control {
             background: rgba(15, 23, 42, 0.6) !important;
@@ -3225,45 +3386,111 @@ unset($_SESSION['announcement_error']);
             <!-- Dashboard Content -->
             <div class="dashboard-content" id="dashboardContent">
                 <div class="stats">
-                    <div class="stat-card" onclick="openStatsModal('total-modal')">
+                    <div class="stat-card total" onclick="openStatsModal('total-modal')">
                         <i class="fas fa-users icon"></i>
-                        <h3><?php echo $total_applicants; ?></h3>
+                        <h3 class="stat-value"><?php echo number_format($total_applicants); ?></h3>
                         <p>Total Applicants</p>
                     </div>
-                    <div class="stat-card" onclick="openStatsModal('approved-modal')">
+                    <div class="stat-card approved" onclick="openStatsModal('approved-modal')">
                         <i class="fas fa-check-circle icon"></i>
-                        <h3><?php echo $approved_applicants; ?></h3>
+                        <h3 class="stat-value"><?php echo number_format($approved_applicants); ?></h3>
                         <p>Approved Applicants</p>
                     </div>
-                    <div class="stat-card" onclick="openStatsModal('denied-modal')">
+                    <div class="stat-card pending">
+                        <i class="fas fa-hourglass-half icon"></i>
+                        <h3 class="stat-value"><?php echo number_format($pending_applicants); ?></h3>
+                        <p>Pending/Under Review</p>
+                    </div>
+                    <div class="stat-card denied" onclick="openStatsModal('denied-modal')">
                         <i class="fas fa-times-circle icon"></i>
-                        <h3><?php echo $denied_applicants; ?></h3>
+                        <h3 class="stat-value"><?php echo number_format($denied_applicants); ?></h3>
                         <p>Denied Applicants</p>
                     </div>
-                    <div class="stat-card" onclick="openStatsModal('admin-modal')">
+                </div>
+
+                <div class="stats program-stats">
+                    <div class="stat-card programs">
+                        <i class="fas fa-layer-group icon"></i>
+                        <h3 class="stat-value"><?php echo number_format($total_program_count); ?></h3>
+                        <p>Scholarship Programs</p>
+                    </div>
+                    <div class="stat-card active-programs">
+                        <i class="fas fa-toggle-on icon"></i>
+                        <h3 class="stat-value"><?php echo number_format($active_program_count); ?></h3>
+                        <p>Active Programs</p>
+                    </div>
+                    <div class="stat-card open-programs">
+                        <i class="fas fa-calendar-check icon"></i>
+                        <h3 class="stat-value"><?php echo number_format($open_programs_count); ?></h3>
+                        <p>Open Application Windows</p>
+                    </div>
+                    <div class="stat-card admin-total" onclick="openStatsModal('admin-modal')">
                         <i class="fas fa-user-shield icon"></i>
-                        <h3><?php echo $total_admins; ?></h3>
-                        <p>Total Admins</p>
+                        <h3 class="stat-value"><?php echo number_format($total_admins); ?></h3>
+                        <p>Active Admins</p>
+                    </div>
                 </div>
-                </div>
-                <div class="deadline-card">
-                        <h3><?php echo htmlspecialchars($formatted_deadline); ?></h3>
-                    <p>Current Application Deadline</p>
-                    <form method="POST">
-                            <div class="form-group">
-                                <label for="application_deadline">Set New Deadline <span class="required">*</span></label>
-                                <div class="input-group">
-                                    <i class="fas fa-calendar-alt"></i>
-                                    <input type="date" id="application_deadline" name="application_deadline" class="form-control" required>
-                                </div>
-                            </div>
-                            <div class="form-buttons">
-                            <button type="submit" name="update_application_period" class="submit-btn">
-                                <i class="fas fa-clock"></i>
-                                Update Deadline
-                            </button>
-                            </div>
-                        </form>
+
+                <div class="program-analytics section">
+                    <h2><i class="fas fa-chart-pie"></i> Scholarship Program Analytics</h2>
+                    <p class="muted">Monitor applicant throughput and application windows for every scholarship program in one view.</p>
+                    <?php if (!empty($program_analytics)): ?>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Program</th>
+                                        <th>Status</th>
+                                        <th>Academic Year</th>
+                                        <th>Applicants</th>
+                                        <th>Approval Rate</th>
+                                        <th>Application Window</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($program_analytics as $program): 
+                                        $total = (int)($program['total_applicants'] ?? 0);
+                                        $approvedCount = (int)($program['approved_applicants'] ?? 0);
+                                        $pendingCount = (int)($program['pending_applicants'] ?? 0);
+                                        $deniedCount = (int)($program['denied_applicants'] ?? 0);
+                                        $approvalRate = $total > 0 ? round(($approvedCount / $total) * 100) : 0;
+                                        $statusLabel = ((int)($program['is_active'] ?? 0) === 1) ? 'Active' : 'Inactive';
+                                        $startDate = !empty($program['application_start_date']) ? date('M d, Y', strtotime($program['application_start_date'])) : null;
+                                        $endDate = !empty($program['application_end_date']) ? date('M d, Y', strtotime($program['application_end_date'])) : null;
+                                        $window = ($startDate && $endDate) ? $startDate . ' - ' . $endDate : 'Not set';
+                                        ?>
+                                        <tr>
+                                            <td>
+                                                <div style="font-weight: 700; color: var(--text-bright);">
+                                                    <?php echo htmlspecialchars($program['program_name']); ?>
+                                                </div>
+                                                <div class="muted">AY <?php echo htmlspecialchars($program['academic_year'] ?? 'Not set'); ?></div>
+                                            </td>
+                                            <td>
+                                                <span class="program-status-badge <?php echo strtolower($statusLabel); ?>">
+                                                    <i class="fas <?php echo $statusLabel === 'Active' ? 'fa-check-circle' : 'fa-pause-circle'; ?>"></i>
+                                                    <?php echo $statusLabel; ?>
+                                                </span>
+                                            </td>
+                                            <td><?php echo htmlspecialchars($program['academic_year'] ?? 'Not set'); ?></td>
+                                            <td>
+                                                <strong><?php echo number_format($total); ?></strong>
+                                                <div class="breakdown">✔ <?php echo number_format($approvedCount); ?> · ⏳ <?php echo number_format($pendingCount); ?> · ✕ <?php echo number_format($deniedCount); ?></div>
+                                            </td>
+                                            <td>
+                                                <span class="tag"><?php echo $approvalRate; ?>%</span>
+                                            </td>
+                                            <td><?php echo htmlspecialchars($window); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <div class="info-message" style="margin-top: 1rem;">
+                            <i class="fas fa-info-circle"></i> No programs found yet. Create a program to start tracking analytics.
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <!-- Reset All Applicants Button -->
                 <div class="section">

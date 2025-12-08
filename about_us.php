@@ -3,6 +3,7 @@
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,8 +13,8 @@
     <link rel="icon" type="image/png" href="./images/logo1.png">
     <style>
         :root {
-            --primary-color: #007bff; 
-            --text-color: #333; 
+            --primary-color: #007bff;
+            --text-color: #333;
             --text-muted: #6b7280;
             --background-color: #f9fafb;
             --card-bg: #ffffff;
@@ -148,6 +149,7 @@
                 opacity: 0;
                 transform: translateY(-20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -159,6 +161,7 @@
                 opacity: 0;
                 transform: translateY(20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -236,7 +239,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: radial-gradient(circle at top right, rgba(255,255,255,0.2), transparent 70%);
+            background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.2), transparent 70%);
             pointer-events: none;
         }
 
@@ -258,7 +261,8 @@
             color: white;
         }
 
-        .info-card p, .info-card a {
+        .info-card p,
+        .info-card a {
             font-size: 1rem;
             color: rgba(255, 255, 255, 0.9);
             text-decoration: none;
@@ -284,6 +288,7 @@
         }
     </style>
 </head>
+
 <body>
     <!-- Include the Navbar -->
     <?php include 'navbar.php'; ?>
@@ -292,14 +297,14 @@
     <div class="hero-section">
         <h1>About Us</h1>
         <p>
-        iSCHO (Integrated Scholarship Application Portal) is your one-stop scholarship application portal designed to simplify the scholarship process. It empowers students to easily apply for and manage scholarship opportunities through a user-friendly interface and seamless navigation, connecting you to your educational dreams—hassle-free. 
+            iSCHO (Integrated Scholarship Application Portal) is your one-stop scholarship application portal designed to simplify the scholarship process. It empowers students to easily apply for and manage scholarship opportunities through a user-friendly interface and seamless navigation, connecting you to your educational dreams—hassle-free.
         </p>
     </div>
 
     <!-- Team Section -->
     <div class="team-section">
         <h2>Meet Us</h2>
-        
+
         <!-- Contact Info Section -->
         <div class="contact-info">
             <div class="info-card">
@@ -313,11 +318,11 @@
                 <div class="info-icon">
                     <i class="fas fa-envelope"></i>
                 </div>
-                <h3>Contact Us, Edukalinga</h3>
-                <a href="mailto:edukalinga@gmail.com">edukalinga@gmail.com</a>
+                <h3>Contact Us</h3>
+                <a href="mailto:ischobsit2@gmail.com">ischobsit2@gmail.com</a>
             </div>
         </div>
-        
+
         <!-- Sponsor Section -->
         <div class="team-member">
             <h3>Our Sponsor</h3>
@@ -326,7 +331,7 @@
             </div>
             <h3>Edukalinga by Cong. Khonghun</h3>
             <p>
-            Edukalinga is a scholarship program initiated by Hon. Khonghun aimed at providing educational support to deserving students in the region. The program is committed to empowering the youth through education and creating opportunities for academic excellence.
+                Edukalinga is a scholarship program initiated by Hon. Khonghun aimed at providing educational support to deserving students in the region. The program is committed to empowering the youth through education and creating opportunities for academic excellence.
             </p>
         </div>
 
@@ -338,7 +343,7 @@
                 </div>
                 <h3>Lacuesta, Hans Marcus Roberto V.</h3>
                 <p>
-                I am Lacuesta, Hans Marcus Roberto V., a passionate Information Technology student and aspiring software developer. I believe in the power of technology to create efficient, user-centered systems that solve everyday problems. With iSCHO, I aspire to contribute to digital transformation in educational institutions by simplifying scholarship management and improving communication between students and administrators.
+                    I am Lacuesta, Hans Marcus Roberto V., a passionate Information Technology student and aspiring software developer. I believe in the power of technology to create efficient, user-centered systems that solve everyday problems. With iSCHO, I aspire to contribute to digital transformation in educational institutions by simplifying scholarship management and improving communication between students and administrators.
                 </p>
             </div>
 
@@ -349,10 +354,11 @@
                 </div>
                 <h3>Gonzales, Icon Zeus R.</h3>
                 <p>
-                I am Icon Zeus R. Gonzales, an Information Technology student and an aspiring developer dedicated to crafting innovative solutions that can positively impact our community. My passion for technology drives me to continuously learn and build systems that address real-world challenges. Through the development of iSCHO, I aim to help streamline scholarship applications and make financial aid more accessible to students.
+                    I am Icon Zeus R. Gonzales, an Information Technology student and an aspiring developer dedicated to crafting innovative solutions that can positively impact our community. My passion for technology drives me to continuously learn and build systems that address real-world challenges. Through the development of iSCHO, I aim to help streamline scholarship applications and make financial aid more accessible to students.
                 </p>
             </div>
         </div>
     </div>
 </body>
+
 </html>
