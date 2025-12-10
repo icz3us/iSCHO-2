@@ -256,6 +256,21 @@ if ($firstname && $lastname) {
 // Get admin's program_id
 $admin_program_id = $_SESSION['program_id'] ?? null;
 
+// Get program name for the report
+$program_name = 'All Programs';
+if ($admin_program_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT program_name FROM scholarship_programs WHERE id = ?");
+        $stmt->execute([$admin_program_id]);
+        $program_result = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($program_result) {
+            $program_name = $program_result['program_name'];
+        }
+    } catch (PDOException $e) {
+        error_log("Error fetching program name: " . $e->getMessage());
+    }
+}
+
 $total_applicants = 0;
 $approved_applicants = 0;
 $denied_applicants = 0;
@@ -873,6 +888,51 @@ if ($admin_program_id) {
         error_log("Error fetching college statistics: " . $e->getMessage());
     }
 }
+
+// Fetch all applicants for the report (filtered by admin's program)
+$report_applicants = [];
+if ($admin_program_id) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT 
+                u.id,
+                u.firstname,
+                u.lastname,
+                u.middlename,
+                u.email,
+                u.contact_no,
+                ui.application_status,
+                ui.claim_status,
+                ui.municipality,
+                ui.barangay,
+                ui.sex AS gender,
+                ui.civil_status,
+                ui.birthdate,
+                ui.place_of_birth,
+                up.degree,
+                up.course,
+                up.current_college,
+                ur.permanent_address,
+                uf.father_name,
+                uf.father_occupation,
+                uf.mother_name,
+                uf.mother_occupation,
+                u.created_at
+            FROM users u
+            LEFT JOIN users_info ui ON u.id = ui.user_id
+            LEFT JOIN user_personal up ON u.id = up.user_id
+            LEFT JOIN user_residency ur ON u.id = ur.user_id
+            LEFT JOIN user_fam uf ON u.id = uf.user_id
+            WHERE u.role = 'Applicant' 
+                AND ui.program_id = ?
+            ORDER BY u.lastname ASC, u.firstname ASC
+        ");
+        $stmt->execute([$admin_program_id]);
+        $report_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching applicants for report: " . $e->getMessage());
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -885,6 +945,7 @@ if ($admin_program_id) {
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link rel="icon" type="image/png" href="./images/logo1.png">
     <link rel="stylesheet" href="adminstyles.css">
     
@@ -1918,6 +1979,190 @@ if ($admin_program_id) {
             font-size: 1.2rem;
         }
     }
+
+    /* Report Generator Styles */
+    .generate-report-btn {
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        color: white;
+        border: none;
+        padding: 0.875rem 1.75rem;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    }
+
+    .generate-report-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
+        background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%);
+    }
+
+    .generate-report-btn:active {
+        transform: translateY(0);
+    }
+
+    .generate-report-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .generate-report-btn i {
+        font-size: 1.1rem;
+    }
+
+    @media (max-width: 768px) {
+        .report-generator-section {
+            text-align: center !important;
+            margin-bottom: 1.5rem !important;
+        }
+
+        .generate-report-btn {
+            width: 100%;
+            justify-content: center;
+            padding: 1rem 1.5rem;
+        }
+
+        .pdf-stats-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .pdf-stats-grid {
+            grid-template-columns: 1fr !important;
+        }
+    }
+
+    /* PDF Report Styles */
+    .pdf-report-container {
+        background: white;
+        padding: 0;
+        font-family: 'Arial', sans-serif;
+    }
+
+    .pdf-report-header {
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        color: white;
+        padding: 2rem;
+        text-align: center;
+        border-bottom: 3px solid #3730a3;
+    }
+
+    .pdf-report-header h1 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }
+
+    .pdf-report-header .subtitle {
+        margin-top: 0.5rem;
+        font-size: 1rem;
+        opacity: 0.9;
+    }
+
+    .pdf-report-body {
+        padding: 2rem;
+        color: #1f2937;
+    }
+
+    .pdf-report-section {
+        margin-bottom: 2rem;
+        page-break-inside: avoid;
+    }
+
+    .pdf-report-section h2 {
+        color: #4f46e5;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .pdf-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .pdf-stat-card {
+        background: #f9fafb;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border-left: 4px solid #4f46e5;
+        text-align: center;
+    }
+
+    .pdf-stat-card h3 {
+        font-size: 2rem;
+        margin: 0;
+        color: #4f46e5;
+        font-weight: 700;
+    }
+
+    .pdf-stat-card p {
+        margin: 0.5rem 0 0 0;
+        color: #6b7280;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    .pdf-chart-container {
+        margin: 1.5rem 0;
+        page-break-inside: avoid;
+    }
+
+    .pdf-chart-container canvas {
+        max-width: 100%;
+        height: auto;
+    }
+
+    .pdf-report-footer {
+        background: #1f2937;
+        color: white;
+        padding: 1.5rem;
+        text-align: center;
+        margin-top: 2rem;
+        border-top: 3px solid #4f46e5;
+    }
+
+    .pdf-report-footer p {
+        margin: 0.25rem 0;
+        font-size: 0.9rem;
+    }
+
+    .pdf-report-footer .footer-title {
+        font-weight: 600;
+        font-size: 1rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .pdf-report-meta {
+        background: #f3f4f6;
+        padding: 1rem;
+        border-radius: 6px;
+        margin-bottom: 2rem;
+        font-size: 0.9rem;
+        color: #6b7280;
+    }
+
+    .pdf-report-meta p {
+        margin: 0.25rem 0;
+    }
+
+    @media print {
+        .pdf-report-container {
+            display: block;
+        }
+    }
     </style>
 </head>
 <body>
@@ -2008,6 +2253,12 @@ if ($admin_program_id) {
 
             <!-- Dashboard View -->
             <?php if ($view === 'dashboard'): ?>
+                <!-- Generate Report Button -->
+                <div class="report-generator-section" style="margin-bottom: 2rem; text-align: right;">
+                    <button id="generateReportBtn" class="generate-report-btn">
+                        <i class="fas fa-file-pdf"></i> Generate Analytics Report
+                    </button>
+                </div>
                 <!-- Application Deadline Display -->
                 <?php
                 try {
@@ -4597,6 +4848,110 @@ if ($admin_program_id) {
                 } catch (e) {
                     console.error('Error terminating worker:', e);
                 }
+            }
+        });
+
+        // ============= REPORT GENERATOR FUNCTIONALITY =============
+        
+        /**
+         * Generate Applicants Report as PDF (Server-side)
+         */
+        window.generateAnalyticsReport = async function() {
+            const btn = document.getElementById('generateReportBtn');
+            if (!btn) return;
+            
+            // Disable button during generation
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating Report...';
+            
+            try {
+                console.log('Initiating server-side PDF generation...');
+                console.log('Button found:', btn);
+                
+                // Call server-side PDF generation endpoint
+                console.log('Fetching from: generate_applicants_report.php');
+                const response = await fetch('generate_applicants_report.php', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/pdf'
+                    },
+                    credentials: 'same-origin'
+                });
+                
+                console.log('Response received:', response);
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Server error:', errorText);
+                    alert('Server Error:\n\nStatus: ' + response.status + '\n\n' + errorText);
+                    throw new Error(errorText || `Server error: ${response.status}`);
+                }
+                
+                // Get the PDF blob
+                const blob = await response.blob();
+                console.log('PDF blob received, size:', blob.size, 'type:', blob.type);
+                
+                if (blob.size === 0) {
+                    alert('Error: PDF file is empty. Check server logs for details.');
+                    throw new Error('PDF file is empty');
+                }
+                
+                // Create download link
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `iSCHO_Applicants_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+                document.body.appendChild(a);
+                console.log('Triggering download...');
+                a.click();
+                
+                // Cleanup
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }, 100);
+                
+                console.log('PDF download initiated successfully');
+                showReportSuccess();
+                
+            } catch (error) {
+                console.error('Error generating report:', error);
+                console.error('Error stack:', error.stack);
+                
+                // Show user-friendly error message
+                alert('Error generating report:\n\n' + (error.message || 'Unknown error occurred. Please try again.') + '\n\nCheck the browser console for more details.');
+            } finally {
+                // Always re-enable button
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-file-pdf"></i> Generate Analytics Report';
+            }
+        };
+        
+        /**
+         * Show success message after report generation
+         */
+        function showReportSuccess() {
+            alert('Report generated successfully!');
+        }
+
+        // ============= END OF REPORT GENERATOR FUNCTIONALITY =============
+        
+        // Add event listener for generate report button
+        document.addEventListener('DOMContentLoaded', function() {
+            const generateBtn = document.getElementById('generateReportBtn');
+            if (generateBtn) {
+                generateBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    if (typeof window.generateAnalyticsReport === 'function') {
+                        window.generateAnalyticsReport();
+                    } else {
+                        console.error('generateAnalyticsReport function not found');
+                        alert('PDF generation function not loaded. Please refresh the page and try again.');
+                    }
+                });
             }
         });
         

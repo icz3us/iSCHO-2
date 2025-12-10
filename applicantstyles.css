@@ -46,21 +46,25 @@ body {
     color: var(--text-color);
     min-height: 100vh;
     display: flex;
+    /* PWA safe-area support for notches */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+/* Mobile-first: Base sidebar for small screens (360px-430px) */
 .sidebar {
-    width: 250px !important;
+    width: 55px !important;
     background: var(--sidebar-bg);
     color: white;
-    padding: 1.5rem;
+    padding: 0.5rem 0.4rem;
     height: 100vh;
+    height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     position: fixed;
-    top: 0;
+    top: env(safe-area-inset-top, 0);
     left: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    box-shadow: 4px 0 25px rgba(0, 0, 0, 0.2);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
     border-right: 1px solid rgba(255, 255, 255, 0.1);
     z-index: 1000;
     backdrop-filter: blur(10px);
@@ -95,20 +99,23 @@ body {
     font-weight: 500;
 }
 
+/* Mobile-first: Compact profile pic */
 .profile-pic {
-    width: 100px;
-    height: 100px;
+    width: 35px;
+    height: 35px;
+    min-width: 35px;
+    min-height: 35px;
     border-radius: 50%;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.75rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 2rem;
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
     font-weight: 500;
     color: var(--text-color);
     background-color: #e5e7eb;
-    border: 3px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     transition: transform 0.3s ease;
     position: relative;
     overflow: hidden;
@@ -151,20 +158,23 @@ body {
     margin-bottom: 0.75rem;
 }
 
+/* Mobile-first: Compact sidebar links */
 .sidebar ul li a {
     color: rgba(255, 255, 255, 0.85);
     text-decoration: none;
     display: flex;
     align-items: center;
-    padding: 0.875rem 1.25rem;
-    border-radius: 12px;
+    justify-content: center;
+    padding: 0.5rem;
+    border-radius: 8px;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    font-size: 1rem;
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
     cursor: pointer;
     border: 1px solid transparent;
     position: relative;
     overflow: hidden;
     font-weight: 500;
+    width: 100%;
 }
 
 .sidebar ul li a::before {
@@ -193,10 +203,11 @@ body {
     z-index: 2;
 }
 
+/* Mobile-first: Centered icons */
 .sidebar ul li a i {
-    margin-right: 1rem;
-    font-size: 1.2rem;
-    width: 24px;
+    margin-right: 0;
+    font-size: clamp(1rem, 3vw, 1.2rem);
+    width: auto;
     text-align: center;
     transition: transform 0.3s ease;
     position: relative;
@@ -241,30 +252,37 @@ body {
     color: white;
 }
 
+/* Mobile-first: Base styles for 360px-430px */
 .main-content {
-    margin-left: 250px;
-    padding: 2rem;
-    width: calc(100% - 250px);
+    margin-left: 0;
+    padding: 0.75rem;
+    width: 100%;
     background: transparent;
     min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom, 0.75rem);
 }
 
+/* Mobile-first: Compact header */
 .header {
     background: var(--bg-gradient-card);
     backdrop-filter: blur(10px);
-    padding: 1.5rem 2rem;
-    border-radius: 16px;
-    box-shadow: var(--shadow-md);
-    margin-bottom: 2rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    margin-bottom: 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border: 1px solid var(--border-color);
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
+/* Mobile-first: Fluid heading */
 .header h1 {
-    font-size: 1.75rem;
+    font-size: clamp(1.125rem, 4vw, 1.75rem);
     font-weight: 600;
+    line-height: 1.3;
     background: var(--bg-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -289,13 +307,14 @@ body {
     overflow: hidden;
 }
 
+/* Mobile-first: Compact welcome text */
 .welcome-text {
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
     background: var(--bg-gradient);
-    padding: 2.5rem;
-    border-radius: 24px;
+    padding: 1rem;
+    border-radius: 12px;
     color: white;
-    box-shadow: var(--shadow-xl);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     position: relative;
     overflow: hidden;
 }
@@ -333,22 +352,27 @@ body {
     opacity: 1;
 }
 
+/* Mobile-first: Fluid welcome heading */
 .welcome-text h2 {
-    font-size: 1.8rem;
-    margin-bottom: 0.75rem;
+    font-size: clamp(1.125rem, 4.5vw, 1.8rem);
+    margin-bottom: 0.5rem;
     font-weight: 600;
+    line-height: 1.3;
     position: relative;
     z-index: 2;
 }
 
+/* Mobile-first: Compact welcome text */
 .welcome-text p {
     opacity: 0.9;
-    font-size: 1.1rem;
+    font-size: clamp(0.875rem, 3vw, 1.1rem);
+    line-height: 1.4;
     position: relative;
     z-index: 2;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
 }
 
 .welcome-text i {
@@ -356,19 +380,21 @@ body {
     opacity: 0.9;
 }
 
+/* Mobile-first: Single column stats on small screens */
 .stats {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2.5rem;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
 }
 
+/* Mobile-first: Compact stat cards */
 .stat-card {
     background: var(--bg-gradient-card);
     backdrop-filter: blur(10px);
-    padding: 2rem;
-    border-radius: 24px;
-    box-shadow: var(--shadow-md);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     border: 1px solid var(--border-color);
     position: relative;
@@ -422,9 +448,10 @@ body {
     background: var(--card-bg-hover);
 }
 
+/* Mobile-first: Smaller icons */
 .stat-card i {
-    font-size: 2.5rem;
-    margin-bottom: 1rem;
+    font-size: clamp(1.5rem, 5vw, 2.5rem);
+    margin-bottom: 0.5rem;
     position: relative;
     z-index: 3;
     background: var(--gradient-primary);
@@ -438,18 +465,22 @@ body {
     transform: scale(1.1) rotate(5deg);
 }
 
+/* Mobile-first: Fluid stat numbers */
 .stat-card h3 {
-    font-size: 1.75rem;
+    font-size: clamp(1.25rem, 4.5vw, 1.75rem);
     font-weight: 600;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
+    line-height: 1.3;
     position: relative;
     z-index: 3;
     transition: all 0.3s ease;
 }
 
+/* Mobile-first: Compact stat text */
 .stat-card p {
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: clamp(0.875rem, 3vw, 1rem);
+    line-height: 1.4;
     position: relative;
     z-index: 3;
     transition: all 0.3s ease;
@@ -502,66 +533,16 @@ body {
     margin-bottom: 0;
 }
 
-/* Responsive adjustments */
-@media (max-width: 1199px) {
+/* Mobile-first: Progressive enhancement for larger screens */
+
+/* Tablet and up (576px+) */
+@media (min-width: 576px) {
     .main-content {
-        margin-left: 250px;
-        width: calc(100% - 250px);
-        padding: 1.5rem;
-    }
-
-    .stats {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1.5rem;
-    }
-}
-
-@media (max-width: 768px) {
-    .sidebar {
-        width: 70px !important;
-        padding: 1rem 0.5rem;
-    }
-
-    .sidebar .logo,
-    .sidebar .logo span,
-    .user-name,
-    .sidebar ul li a span {
-        display: none;
-    }
-
-    .profile-pic {
-        width: 45px;
-        height: 45px;
-        min-width: 45px;
-        min-height: 45px;
-        margin-bottom: 1.5rem;
-        font-size: 1.2rem;
-    }
-
-    .sidebar ul {
-        padding: 0;
-        margin-top: 1rem;
-    }
-
-    .sidebar ul li a {
-        padding: 0.75rem;
-        justify-content: center;
-        width: 100%;
-    }
-
-    .sidebar ul li a i {
-        margin: 0;
-        font-size: 1.3rem;
-    }
-
-    .main-content {
-        margin-left: 70px;
-        width: calc(100% - 70px);
+        margin-left: 60px;
+        width: calc(100% - 60px);
         padding: 1rem;
     }
-}
 
-@media (max-width: 576px) {
     .sidebar {
         width: 60px !important;
         padding: 0.75rem 0.5rem;
@@ -572,81 +553,249 @@ body {
         height: 40px;
         min-width: 40px;
         min-height: 40px;
+        margin-bottom: 1rem;
+        font-size: clamp(1rem, 2.5vw, 1.1rem);
+    }
+
+    .stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+
+    .section {
+        padding: 1rem 1.25rem;
+        border-radius: 10px;
+    }
+
+    .form-section {
+        padding: 1rem 1.25rem;
+        border-radius: 10px;
+    }
+
+    .form-buttons {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
+    .form-buttons .prev-btn,
+    .form-buttons .next-btn,
+    .form-buttons .submit-btn {
+        width: auto;
+        min-width: 120px;
+    }
+}
+
+/* Small desktop and up (768px+) */
+@media (min-width: 768px) {
+    .sidebar {
+        width: 70px !important;
+        padding: 1rem 0.5rem;
+    }
+
+    .profile-pic {
+        width: 45px;
+        height: 45px;
+        min-width: 45px;
+        min-height: 45px;
         margin-bottom: 1.25rem;
-        font-size: 1.1rem;
+        font-size: clamp(1.1rem, 2.5vw, 1.2rem);
+    }
+
+    .main-content {
+        margin-left: 70px;
+        width: calc(100% - 70px);
+        padding: 1.25rem;
+    }
+
+    .header {
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+    }
+
+    .welcome-text {
+        padding: 1.5rem;
+        border-radius: 16px;
+        margin-bottom: 1.5rem;
+    }
+
+    .stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1.25rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+        padding: 1.25rem 1.5rem;
+        border-radius: 12px;
+    }
+
+    .section {
+        padding: 1.25rem 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+    }
+
+    .form-section {
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+    }
+
+    .form-row {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+}
+
+/* Medium desktop and up (992px+) */
+@media (min-width: 992px) {
+    .main-content {
+        padding: 1.5rem;
+    }
+
+    .stats {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .form-row {
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.25rem;
+    }
+}
+
+/* Large desktop and up (1200px+) */
+@media (min-width: 1200px) {
+    .sidebar {
+        width: 250px !important;
+        padding: 1.5rem;
+    }
+
+    .sidebar .logo span,
+    .user-name,
+    .sidebar ul li a span {
+        display: block;
+    }
+
+    .profile-pic {
+        width: 100px;
+        height: 100px;
+        min-width: 100px;
+        min-height: 100px;
+        margin-bottom: 1.5rem;
+        font-size: 2rem;
     }
 
     .sidebar ul li a {
-        padding: 0.65rem;
+        padding: 0.875rem 1.25rem;
+        justify-content: flex-start;
     }
 
     .sidebar ul li a i {
+        margin-right: 1rem;
         font-size: 1.2rem;
     }
 
     .main-content {
-        margin-left: 60px;
-        width: calc(100% - 60px);
-    }
-}
-
-@media (max-width: 375px) {
-    .sidebar {
-        width: 55px !important;
-        padding: 0.5rem 0.4rem;
+        margin-left: 250px;
+        width: calc(100% - 250px);
+        padding: 2rem;
     }
 
-    .profile-pic {
-        width: 35px;
-        height: 35px;
-        min-width: 35px;
-        min-height: 35px;
+    .header {
+        padding: 1.5rem 2rem;
+        border-radius: 16px;
+        margin-bottom: 2rem;
+    }
+
+    .welcome-text {
+        padding: 2.5rem;
+        border-radius: 24px;
+        margin-bottom: 2rem;
+    }
+
+    .stats {
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2.5rem;
+    }
+
+    .stat-card {
+        padding: 2rem;
+        border-radius: 24px;
+    }
+
+    .section {
+        padding: 1.5rem;
+        border-radius: 16px;
+        margin-bottom: 2rem;
+    }
+
+    .section.notices {
+        padding: 2rem;
+    }
+
+    .notices ul li {
+        padding: 1.5rem;
+        border-radius: 12px;
         margin-bottom: 1rem;
-        font-size: 1rem;
     }
 
-    .main-content {
-        margin-left: 55px;
-        width: calc(100% - 55px);
+    .form-section {
+        padding: 2rem;
+        border-radius: 20px;
+        margin-bottom: 3rem;
+    }
+
+    .form-buttons {
+        margin-top: 2rem;
+        padding-top: 2rem;
     }
 }
 
+/* Mobile-first: Compact sections */
 .section {
     background: var(--bg-gradient-card);
     backdrop-filter: blur(10px);
-    padding: 1.5rem;
-    border-radius: 16px;
-    box-shadow: var(--shadow-md);
-    margin-bottom: 2rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    margin-bottom: 1rem;
     border: 1px solid var(--border-color);
 }
 
+/* Mobile-first: Fluid section headings */
 .section h2 {
-    font-size: 1.25rem;
+    font-size: clamp(1rem, 3.5vw, 1.25rem);
     font-weight: 600;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
+    line-height: 1.3;
     background: var(--bg-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
 
+/* Mobile-first: Compact notices section */
 .section.notices {
     background-color: var(--card-bg);
-    padding: 2rem;
-    border-radius: 16px;
-    box-shadow: var(--shadow-md);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     border: 1px solid var(--border-color);
 }
 
+/* Mobile-first: Compact notice headings */
 .notices h2 {
-    font-size: 1.5rem;
+    font-size: clamp(1.125rem, 4vw, 1.5rem);
     font-weight: 600;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.75rem;
+    line-height: 1.3;
     color: var(--text-color);
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
 }
 
 .notices h2 i {
@@ -661,20 +810,21 @@ body {
     padding: 0;
 }
 
+/* Mobile-first: Compact notice items */
 .notices ul li {
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
-    border-left: 4px solid var(--primary-color);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
+    border-left: 3px solid var(--primary-color);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.5rem;
     position: relative;
     overflow: hidden;
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 .notices ul li::before {
@@ -700,10 +850,11 @@ body {
     border-left-color: white;
 }
 
+/* Mobile-first: Compact notice content */
 .notices ul li .notice-content {
-    font-size: 1rem;
+    font-size: clamp(0.875rem, 3vw, 1rem);
     color: var(--text-color);
-    line-height: 1.6;
+    line-height: 1.4;
     position: relative;
     z-index: 2;
     transition: all 0.3s ease;
@@ -713,12 +864,14 @@ body {
     color: white;
 }
 
+/* Mobile-first: Compact notice dates */
 .notices ul li .notice-date {
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: clamp(0.75rem, 2.5vw, 0.9rem);
+    line-height: 1.3;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.375rem;
     position: relative;
     z-index: 2;
     transition: all 0.3s ease;
@@ -802,34 +955,38 @@ body {
     margin-top: 0.5rem;
 }
 
+/* Mobile-first: Compact form sections */
 .form-section {
-    margin-bottom: 3rem;
-    padding: 2rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
     background: var(--bg-gradient-card);
     backdrop-filter: blur(10px);
-    border-radius: 20px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
+/* Mobile-first: Fluid form section headings */
 .form-section h3 {
-    font-size: 1.3rem;
+    font-size: clamp(1rem, 3.5vw, 1.3rem);
     font-weight: 600;
+    line-height: 1.3;
     background: var(--bg-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
     border-bottom: 2px solid;
     border-image: var(--bg-gradient) 1;
-    padding-bottom: 0.5rem;
+    padding-bottom: 0.375rem;
 }
 
+/* Mobile-first: Single column forms on small screens */
 .form-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
 }
 
 /* Single column for full-width fields */
@@ -858,13 +1015,15 @@ body {
     grid-column: 1 / -1;
 }
 
+/* Mobile-first: Compact form labels */
 .form-group label {
     display: block;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: clamp(0.875rem, 3vw, 0.95rem);
+    line-height: 1.3;
     color: var(--text-bright);
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
 }
 
 .form-group label .required {
@@ -883,12 +1042,14 @@ body {
     color: var(--text-muted);
 }
 
+/* Mobile-first: Compact form controls */
 .form-control {
     width: 100%;
-    padding: 0.75rem 1rem 0.75rem 2.5rem;
+    padding: 0.625rem 0.875rem 0.625rem 2.25rem;
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: clamp(0.875rem, 3vw, 1rem);
+    line-height: 1.4;
     transition: all 0.3s ease;
     background: rgba(15, 23, 42, 0.6);
     color: var(--text-bright);
@@ -1437,26 +1598,35 @@ input[type="radio"]:checked {
     accent-color: var(--primary-color);
 }
 
+/* Mobile-first: Stacked form buttons */
 .form-buttons {
     display: flex;
+    flex-direction: column-reverse;
     justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-    margin-top: 2rem;
-    padding-top: 2rem;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
     border-top: 1px solid var(--border-color);
 }
 
+/* Mobile-first: Touch-friendly buttons */
 .form-buttons .prev-btn,
 .form-buttons .next-btn,
 .form-buttons .submit-btn {
-    padding: 0.875rem 2rem;
+    width: 100%;
+    padding: 0.75rem 1.5rem;
+    min-height: 44px;
     border: none;
-    border-radius: 12px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: clamp(0.875rem, 3vw, 1rem);
     font-weight: 600;
+    line-height: 1.3;
     cursor: pointer;
     transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .form-buttons .prev-btn {
@@ -1861,18 +2031,62 @@ input[type="radio"]:checked {
     }
 }
 
-@media (max-width: 768px) {
+/* Mobile-first: FAQ styles - base is mobile, enhance for larger screens */
+.faqs-content {
+    margin: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+}
+
+.faqs-content h4 {
+    font-size: clamp(0.875rem, 3vw, 1rem);
+    line-height: 1.3;
+}
+
+.faq-question {
+    padding: 0.75rem 1rem;
+    font-size: clamp(0.875rem, 3vw, 1rem);
+    line-height: 1.4;
+}
+
+.faq-answer {
+    padding: 0.75rem 1rem;
+    font-size: clamp(0.875rem, 3vw, 0.95rem);
+    line-height: 1.4;
+}
+
+@media (min-width: 576px) {
     .faqs-content {
         margin: 1rem;
-        padding: 1.5rem;
+        padding: 1rem 1.25rem;
     }
 
-    .faqs-content h4 {
-        font-size: 1rem;
+    .faqs-content .header {
+        margin-bottom: 1.25rem;
     }
 
     .faq-question {
-        padding: 1rem;
+        padding: 0.875rem 1rem;
+    }
+
+    .faq-answer {
+        padding: 1rem 1.25rem;
+    }
+}
+
+@media (min-width: 768px) {
+    .faqs-content {
+        margin: 1.5rem;
+        padding: 1.5rem;
+        border-radius: 12px;
+    }
+
+    .faqs-content h4 {
+        font-size: 1.1rem;
+    }
+
+    .faq-question {
+        padding: 1rem 1.25rem;
         font-size: 1rem;
     }
 
@@ -1882,171 +2096,130 @@ input[type="radio"]:checked {
     }
 }
 
-@media (max-width: 576px) {
-    .faqs-content {
-        margin: 0.5rem;
-        padding: 1rem;
-    }
-
-    .faqs-content .header {
-        margin-bottom: 1.5rem;
-    }
-
-    .faq-question {
-        padding: 0.875rem;
-        font-size: 0.95rem;
-    }
-
-    .faq-answer {
-        padding: 1rem;
-        font-size: 0.9rem;
-    }
+/* Mobile-first: Progress bar - base is mobile (vertical) */
+.progress-bar {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-start;
+    padding: 0 0.5rem;
+    margin-bottom: 1rem;
 }
 
-/* Mobile responsiveness for progress steps and form */
-@media (max-width: 768px) {
+.progress-step {
+    width: 100%;
+    flex-direction: row;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.progress-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: auto;
+    left: 12px;
+    width: 2px;
+    height: 100%;
+    background-color: var(--border-color);
+    z-index: -1;
+}
+
+.progress-step .step-label {
+    margin-top: 0;
+    font-size: clamp(0.8rem, 2.5vw, 0.9rem);
+    line-height: 1.3;
+}
+
+@media (min-width: 768px) {
     .progress-bar {
-        flex-direction: column;
-        gap: 1rem;
-        align-items: flex-start;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
         padding: 0 1rem;
+        gap: 0.5rem;
     }
 
     .progress-step {
-        width: 100%;
-        flex-direction: row;
-        gap: 1rem;
-        align-items: center;
+        flex-direction: column;
+        width: auto;
+        flex: 1;
     }
 
     .progress-step:not(:last-child)::after {
-        content: '';
-        position: absolute;
-        top: auto;
-        left: 15px;
-        width: 2px;
-        height: 100%;
-        background-color: var(--border-color);
-        z-index: -1;
+        top: 15px;
+        left: 50%;
+        width: 100%;
+        height: 2px;
     }
 
     .progress-step .step-label {
-        margin-top: 0;
-        font-size: 0.9rem;
-    }
-
-    .form-buttons {
-        flex-direction: column-reverse;
-        gap: 0.75rem;
-        margin-top: 1.5rem;
-        padding-top: 1.5rem;
-    }
-
-    .form-buttons .prev-btn,
-    .form-buttons .next-btn,
-    .form-buttons .submit-btn {
-        width: 100%;
-        padding: 1rem;
-        font-size: 1rem;
-    }
-
-    .form-row {
-        grid-template-columns: 1fr;
-        gap: 1rem;
-    }
-
-    .form-group {
-        width: 100%;
-        min-width: 100%;
-    }
-
-    .form-section {
-        padding: 1.5rem;
+        margin-top: 0.5rem;
     }
 }
 
-/* Fix sidebar height on smaller screens */
-@media (max-width: 768px) {
-    .sidebar {
-        min-height: 100vh;
-        height: auto;
-        position: fixed;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        background: var(--sidebar-bg);
-    }
-
-    .main-content {
-        min-height: 100vh;
-        height: auto;
-    }
+/* Mobile-first: Sidebar and main content height - always full height */
+.sidebar {
+    min-height: 100vh;
+    height: auto;
+    position: fixed;
+    top: env(safe-area-inset-top, 0);
+    left: 0;
+    bottom: env(safe-area-inset-bottom, 0);
+    background: var(--sidebar-bg);
 }
 
-/* Adjust form padding on mobile */
-@media (max-width: 576px) {
+.main-content {
+    min-height: 100vh;
+    height: auto;
+}
+
+/* Mobile-first: Application form - base styles already set above */
+.application-form {
+    padding: 0.75rem;
+}
+
+.file-upload-label {
+    padding: 0.625rem 0.875rem;
+    font-size: clamp(0.875rem, 3vw, 0.9rem);
+    line-height: 1.4;
+}
+
+@media (min-width: 576px) {
     .application-form {
         padding: 1rem;
     }
 
     .form-section {
-        padding: 1rem;
-        border-radius: 16px;
+        padding: 1rem 1.25rem;
+        border-radius: 10px;
     }
+}
 
-    .form-row {
-        gap: 1rem;
+@media (min-width: 768px) {
+    .application-form {
+        padding: 1.5rem;
     }
 
     .form-control {
-        padding: 0.875rem 1rem 0.875rem 2.5rem;
-        font-size: 0.95rem;
+        padding: 0.75rem 1rem 0.75rem 2.5rem;
     }
 
     .file-upload-label {
-        padding: 0.875rem;
-        font-size: 0.9rem;
+        padding: 0.75rem 1rem;
     }
 }
 
-/* Fix sidebar background and height */
-.sidebar {
-    background: var(--sidebar-bg);
-    min-height: 100vh;
-    height: auto;
+/* Sidebar styles already defined above with mobile-first approach */
+
+/* Main content styles already defined above */
+
+/* Form section spacing already defined above with mobile-first */
+
+/* Touch-friendly buttons - base styles already set above, ensure min-height */
+.form-buttons .prev-btn,
+.form-buttons .next-btn,
+.form-buttons .submit-btn {
+    min-height: 44px;
     display: flex;
-    flex-direction: column;
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-}
-
-/* Ensure main content pushes down to fill viewport */
-.main-content {
-    min-height: 100vh;
-    height: auto;
-    display: flex;
-    flex-direction: column;
-}
-
-/* Adjust form section spacing */
-.form-section {
-    margin-bottom: 1.5rem;
-    padding: 1rem;
-}
-
-/* Make buttons more touch-friendly on mobile */
-@media (max-width: 576px) {
-    .form-buttons .prev-btn,
-    .form-buttons .next-btn,
-    .form-buttons .submit-btn {
-        min-height: 48px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1rem;
-        padding: 0.75rem 1.5rem;
-        border-radius: 8px;
-    }
+    align-items: center;
+    justify-content: center;
 }
