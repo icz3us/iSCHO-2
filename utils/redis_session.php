@@ -25,7 +25,7 @@ class RedisSessionHandler implements SessionHandlerInterface {
      * @param string $name
      * @return bool
      */
-    public function open($save_path, $name) {
+    public function open(string $save_path, string $name): bool {
         return $this->redis->isConnected();
     }
 
@@ -34,7 +34,7 @@ class RedisSessionHandler implements SessionHandlerInterface {
      * 
      * @return bool
      */
-    public function close() {
+    public function close(): bool {
         return true;
     }
 
@@ -42,9 +42,9 @@ class RedisSessionHandler implements SessionHandlerInterface {
      * Read session data
      * 
      * @param string $session_id
-     * @return string
+     * @return string|false
      */
-    public function read($session_id) {
+    public function read(string $session_id): string|false {
         try {
             if (!$this->redis->isConnected()) {
                 return '';
@@ -64,7 +64,7 @@ class RedisSessionHandler implements SessionHandlerInterface {
      * @param string $session_data
      * @return bool
      */
-    public function write($session_id, $session_data) {
+    public function write(string $session_id, string $session_data): bool {
         try {
             if (!$this->redis->isConnected()) {
                 return false;
@@ -82,7 +82,7 @@ class RedisSessionHandler implements SessionHandlerInterface {
      * @param string $session_id
      * @return bool
      */
-    public function destroy($session_id) {
+    public function destroy(string $session_id): bool {
         try {
             if (!$this->redis->isConnected()) {
                 return false;
@@ -98,11 +98,12 @@ class RedisSessionHandler implements SessionHandlerInterface {
      * Garbage collection
      * 
      * @param int $maxlifetime
-     * @return bool
+     * @return int|false
      */
-    public function gc($maxlifetime) {
+    public function gc(int $maxlifetime): int|false {
         // Redis handles expiration automatically, so this is a no-op
-        return true;
+        // Return 0 to indicate no sessions were cleaned (Redis handles it automatically)
+        return 0;
     }
 }
 
