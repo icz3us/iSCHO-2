@@ -154,20 +154,21 @@ class PDF extends FPDF {
         
         // Dark slate header bar (same as footer)
         $this->SetFillColor(30, 41, 59); // Dark slate
-        $this->Rect(0, 0, $this->GetPageWidth(), 12, 'F');
+        $this->Rect(0, 0, $this->GetPageWidth(), 18, 'F');
         
         // White text on dark background
+        // Application name - smaller and less prominent
         $this->SetTextColor(255, 255, 255);
-        $this->SetFont('Arial', 'B', 16);
-        $this->SetXY(10, 3);
-        $this->Cell(0, 6, 'iSCHO SCHOLARSHIP APPLICATION SYSTEM', 0, 1, 'C');
+        $this->SetFont('Arial', '', 8);
+        $this->SetXY(10, 2);
+        $this->Cell(0, 4, 'iSCHO SCHOLARSHIP APPLICATION SYSTEM', 0, 1, 'C');
         
-        // Program name subtitle
-        $this->SetFont('Arial', '', 9);
-        $this->SetX(10);
-        $this->Cell(0, 3, 'Applicants Report - ' . $program_name, 0, 1, 'C');
+        // Main title - Applicants Report with Program name - emphasized
+        $this->SetFont('Arial', 'B', 14);
+        $this->SetXY(10, 7);
+        $this->Cell(0, 6, 'APPLICANTS REPORT - ' . strtoupper($program_name), 0, 1, 'C');
         
-        $this->Ln(2);
+        $this->Ln(5);
     }
     
     function Footer() {
@@ -216,10 +217,10 @@ class PDF extends FPDF {
         $this->SetXY(10, $this->GetPageHeight() - 5);
         $this->Cell(80, 4, 'Email: ischobsit@gmail.com', 0, 0, 'L');
         
-        // Center: Page number
+        // Center: Page number with total pages
         $this->SetFont('Arial', 'B', 9);
-        $this->SetXY($pageWidth / 2 - 20, $this->GetPageHeight() - 7);
-        $this->Cell(40, 4, 'Page ' . $this->PageNo(), 0, 0, 'C');
+        $this->SetXY($pageWidth / 2 - 30, $this->GetPageHeight() - 7);
+        $this->Cell(60, 4, 'Page ' . $this->PageNo() . ' of {nb}', 0, 0, 'C');
         
         // Right: Copyright
         $this->SetFont('Arial', '', 7);
@@ -229,15 +230,17 @@ class PDF extends FPDF {
 }
 
 $pdf = new PDF('P', 'mm', 'Letter'); // Portrait
-$pdf->SetMargins(10, 18, 10);
+$pdf->SetMargins(10, 22, 10); // Increased top margin to accommodate larger header
 $pdf->SetAutoPageBreak(true, 30); // Increased bottom margin to accommodate report info
+$pdf->AliasNbPages(); // Enable total page count
 $pdf->AddPage();
 
 // Applicants List Title
-$pdf->SetFont('Arial', 'B', 11);
+$pdf->Ln(4); // Space after header
+$pdf->SetFont('Arial', 'B', 12);
 $pdf->SetTextColor(0, 0, 0);
-$pdf->Cell(0, 6, 'Applicants List', 0, 1, 'C');
-$pdf->Ln(2);
+$pdf->Cell(0, 7, 'Applicants List', 0, 1, 'C');
+$pdf->Ln(4); // Space before table
 
 // Calculate table widths for portrait mode (adjusted for narrower page)
 $pageWidth = $pdf->GetPageWidth();

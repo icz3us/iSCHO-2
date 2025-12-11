@@ -1573,6 +1573,204 @@ if ($admin_program_id) {
         background-color: #4338ca;
     }
 
+    /* Report Success Modal Styles */
+    .report-success-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        z-index: 10000;
+        justify-content: center;
+        align-items: center;
+        animation: fadeIn 0.3s ease-out;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+
+    .report-success-modal-content {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        padding: 2.5rem;
+        border-radius: 20px;
+        text-align: center;
+        position: relative;
+        width: 90%;
+        max-width: 450px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        border: 1px solid rgba(99, 102, 241, 0.1);
+    }
+
+    @keyframes slideUp {
+        from {
+            transform: translateY(30px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    .report-success-icon-wrapper {
+        position: relative;
+        display: inline-block;
+        margin-bottom: 1.5rem;
+    }
+
+    .report-success-icon {
+        font-size: 4rem;
+        color: #6366f1;
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes scaleIn {
+        from {
+            transform: scale(0);
+        }
+        to {
+            transform: scale(1);
+        }
+    }
+
+    .report-success-check {
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 2.5rem;
+        height: 2.5rem;
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.2rem;
+        border: 4px solid #ffffff;
+        box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+        animation: checkPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both;
+    }
+
+    @keyframes checkPop {
+        0% {
+            transform: scale(0);
+        }
+        50% {
+            transform: scale(1.2);
+        }
+        100% {
+            transform: scale(1);
+        }
+    }
+
+    .report-success-modal-content h3 {
+        color: #1e293b;
+        margin-bottom: 0.75rem;
+        font-size: 1.75rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .report-success-modal-content > p {
+        color: #64748b;
+        margin-bottom: 1.5rem;
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+
+    .report-success-details {
+        background: rgba(99, 102, 241, 0.05);
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        border: 1px solid rgba(99, 102, 241, 0.1);
+    }
+
+    .report-success-detail-item {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        color: #475569;
+        font-size: 0.9rem;
+    }
+
+    .report-success-detail-item i {
+        color: #6366f1;
+        font-size: 1.1rem;
+    }
+
+    .report-success-btn {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        color: white;
+        border: none;
+        padding: 0.875rem 2.5rem;
+        border-radius: 12px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+    }
+
+    .report-success-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+    }
+
+    .report-success-btn:active {
+        transform: translateY(0);
+    }
+
+    .report-success-btn i {
+        font-size: 0.9rem;
+    }
+
+    /* Close button for report success modal */
+    .report-success-modal-content .close-btn {
+        position: absolute;
+        right: 1.25rem;
+        top: 1.25rem;
+        font-size: 1.5rem;
+        color: #94a3b8;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 0.25rem;
+        width: 2rem;
+        height: 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+    }
+
+    .report-success-modal-content .close-btn:hover {
+        color: #1e293b;
+        background: rgba(148, 163, 184, 0.1);
+    }
+
     .stat-card.under-review .icon {
         color: #f59e0b;
     }
@@ -2857,6 +3055,31 @@ if ($admin_program_id) {
             <h3>Upload Successful!</h3>
             <p>The claim photo has been uploaded successfully.</p>
             <button class="ok-btn" onclick="hideSuccessModal()">OK</button>
+        </div>
+    </div>
+
+    <!-- Report Success Modal HTML -->
+    <div class="report-success-modal" id="report-success-modal">
+        <div class="report-success-modal-content">
+            <button class="close-btn" onclick="hideReportSuccessModal()">&times;</button>
+            <div class="report-success-icon-wrapper">
+                <i class="fas fa-file-pdf report-success-icon"></i>
+                <div class="report-success-check">
+                    <i class="fas fa-check"></i>
+                </div>
+            </div>
+            <h3>Report Generated Successfully!</h3>
+            <p>Your analytics report has been generated and is ready for download.</p>
+            <div class="report-success-details">
+                <div class="report-success-detail-item">
+                    <i class="fas fa-download"></i>
+                    <span>PDF file is downloading automatically</span>
+                </div>
+            </div>
+            <button class="report-success-btn" onclick="hideReportSuccessModal()">
+                <i class="fas fa-check"></i>
+                Got it
+            </button>
         </div>
     </div>
 
@@ -4934,7 +5157,24 @@ if ($admin_program_id) {
          * Show success message after report generation
          */
         function showReportSuccess() {
-            alert('Report generated successfully!');
+            const modal = document.getElementById('report-success-modal');
+            if (modal) {
+                modal.style.display = 'flex';
+                // Auto-close after 3 seconds
+                setTimeout(() => {
+                    hideReportSuccessModal();
+                }, 3000);
+            }
+        }
+        
+        /**
+         * Hide report success modal
+         */
+        function hideReportSuccessModal() {
+            const modal = document.getElementById('report-success-modal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
         }
 
         // ============= END OF REPORT GENERATOR FUNCTIONALITY =============
