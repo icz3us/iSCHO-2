@@ -1,5 +1,8 @@
 <?php
-// Start output buffering to prevent any stray output
+// Start output buffering immediately to prevent any stray output
+while (ob_get_level()) {
+    ob_end_clean();
+}
 ob_start();
 
 // Enable error reporting for debugging
@@ -8,10 +11,32 @@ ini_set('display_errors', 0); // Don't display errors as it will corrupt PDF
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/pdf_errors.log');
 
-require './route_guard.php';
-require 'connect/connection.php';
+// Suppress any output from required files by using nested buffer
+ob_start();
+try {
+    require './route_guard.php';
+    require 'connect/connection.php';
+} catch (Exception $e) {
+    ob_end_clean();
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    error_log("Error loading required files: " . $e->getMessage());
+    http_response_code(500);
+    exit('Error loading required files');
+}
+// Clean any output from required files
+$required_output = ob_get_clean();
+if (!empty(trim($required_output))) {
+    error_log("Warning: Output detected from required files: " . substr($required_output, 0, 100));
+    // If there was output, we need to clean it to prevent PDF corruption
+    // But if it's a fatal error (like database connection), the script would have died already
+}
 
 if ($_SESSION['user_role'] !== 'Admin') {
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
     http_response_code(403);
     exit('Unauthorized');
 }
@@ -20,32 +45,42 @@ if ($_SESSION['user_role'] !== 'Admin') {
 $admin_program_id = $_SESSION['program_id'] ?? null;
 
 if (!$admin_program_id) {
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
     http_response_code(400);
     exit('No program assigned to admin');
 }
 
-// Get program name
+// Get program name and application period dates
 $program_name = 'Unknown Program';
+$application_start_date = 'Not Set';
+$application_end_date = 'Not Set';
 try {
-    $stmt = $pdo->prepare("SELECT program_name FROM scholarship_programs WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT program_name, application_start_date, application_end_date FROM scholarship_programs WHERE id = ?");
     $stmt->execute([$admin_program_id]);
     $program_result = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($program_result) {
         $program_name = $program_result['program_name'];
+        if (!empty($program_result['application_start_date'])) {
+            $application_start_date = date('m/d/Y', strtotime($program_result['application_start_date']));
+        }
+        if (!empty($program_result['application_end_date'])) {
+            $application_end_date = date('m/d/Y', strtotime($program_result['application_end_date']));
+        }
     }
 } catch (PDOException $e) {
-    error_log("Error fetching program name: " . $e->getMessage());
+    error_log("Error fetching program name and dates: " . $e->getMessage());
 }
 
-// Get application deadline
-$deadline = 'Not Set';
-try {
-    $stmt = $pdo->prepare("SELECT application_deadline FROM application_period ORDER BY updated_at DESC LIMIT 1");
-    $stmt->execute();
-    $deadline_result = $stmt->fetch(PDO::FETCH_ASSOC);
-    $deadline = $deadline_result ? date('m/d/Y', strtotime($deadline_result['application_deadline'])) : 'Not Set';
-} catch (PDOException $e) {
-    error_log("Error fetching deadline: " . $e->getMessage());
+// Format application period string
+$application_period = 'Not Set';
+if ($application_start_date !== 'Not Set' && $application_end_date !== 'Not Set') {
+    $application_period = $application_start_date . ' - ' . $application_end_date;
+} elseif ($application_start_date !== 'Not Set') {
+    $application_period = 'From: ' . $application_start_date;
+} elseif ($application_end_date !== 'Not Set') {
+    $application_period = 'Until: ' . $application_end_date;
 }
 
 // Fetch all applicants for the report
@@ -76,11 +111,17 @@ try {
     $applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     error_log("Error fetching applicants: " . $e->getMessage());
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
     http_response_code(500);
     exit('Error fetching applicants');
 }
 
 if (empty($applicants)) {
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
     http_response_code(404);
     exit('No applicants found for this program');
 }
@@ -94,11 +135,17 @@ if (empty($admin_name) || $admin_name === ',') {
 // Include FPDF
 $fpdf_path = __DIR__ . '/fpdf.php';
 if (!file_exists($fpdf_path)) {
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
     http_response_code(500);
     exit('FPDF library not found. Please install FPDF manually.');
 }
 
+// Suppress any output from FPDF require
+ob_start();
 require($fpdf_path);
+ob_end_clean();
 
 // Create PDF
 class PDF extends FPDF {
@@ -124,9 +171,35 @@ class PDF extends FPDF {
     }
     
     function Footer() {
-        $this->SetY(-12);
+        global $admin_name, $application_period;
+        
+        // Report Info near footer (before the dark footer bar)
+        $this->SetY(-30);
+        $this->SetTextColor(0, 0, 0);
+        $this->SetFont('Arial', '', 7);
+        
+        $pageWidth = $this->GetPageWidth();
+        $currentY = $this->GetY();
+        
+        // Left side: Generated By
+        $this->SetXY(10, $currentY);
+        $this->Cell(90, 4, 'Generated By: ' . $admin_name, 0, 0, 'L');
+        
+        // Right side: Generated On
+        $this->SetXY($pageWidth - 100, $currentY);
+        $this->Cell(90, 4, 'Generated On: ' . date('F d, Y'), 0, 1, 'R');
+        
+        // Left side: Generated At
+        $currentY = $this->GetY();
+        $this->SetXY(10, $currentY);
+        $this->Cell(90, 4, 'Generated At: ' . date('h:i A'), 0, 0, 'L');
+        
+        // Right side: Application Period
+        $this->SetXY($pageWidth - 100, $currentY);
+        $this->Cell(90, 4, 'Application Period: ' . $application_period, 0, 1, 'R');
         
         // Dark footer bar
+        $this->SetY(-12);
         $this->SetFillColor(30, 41, 59); // Dark slate
         $this->Rect(0, $this->GetPageHeight() - 12, $this->GetPageWidth(), 12, 'F');
         
@@ -155,82 +228,71 @@ class PDF extends FPDF {
     }
 }
 
-$pdf = new PDF('L', 'mm', 'Letter'); // Landscape
+$pdf = new PDF('P', 'mm', 'Letter'); // Portrait
 $pdf->SetMargins(10, 18, 10);
-$pdf->SetAutoPageBreak(true, 15);
+$pdf->SetAutoPageBreak(true, 30); // Increased bottom margin to accommodate report info
 $pdf->AddPage();
-
-// Report Info
-$pdf->SetFont('Arial', 'B', 10);
-$pdf->SetTextColor(30, 41, 59);
-$pdf->Cell(80, 6, 'Generated By: ' . $admin_name, 0, 0);
-$pdf->Cell(80, 6, 'Total Applicants: ' . count($applicants), 0, 0);
-$pdf->Cell(0, 6, 'Deadline: ' . $deadline, 0, 1);
-$pdf->SetFont('Arial', '', 8);
-$pdf->Cell(80, 5, 'Generated On: ' . date('F d, Y'), 0, 0);
-$pdf->Cell(80, 5, 'Generated At: ' . date('h:i A'), 0, 1);
-$pdf->Ln(3);
 
 // Applicants List Title
 $pdf->SetFont('Arial', 'B', 11);
-$pdf->SetTextColor(79, 70, 229);
+$pdf->SetTextColor(0, 0, 0);
 $pdf->Cell(0, 6, 'Applicants List', 0, 1, 'C');
 $pdf->Ln(2);
 
-// Calculate table centering
-$tableWidth = 8 + 28 + 32 + 22 + 12 + 25 + 30 + 30 + 20 + 20; // Total: 227mm
+// Calculate table widths for portrait mode (adjusted for narrower page)
 $pageWidth = $pdf->GetPageWidth();
-$leftMargin = 10; // We set this to 10mm in SetMargins
-$rightMargin = 10; // We set this to 10mm in SetMargins
-$usableWidth = $pageWidth - $leftMargin - $rightMargin;
-$tableStartX = $leftMargin + (($usableWidth - $tableWidth) / 2);
+$leftMargin = 10;
+$rightMargin = 10;
+$usableWidth = $pageWidth - $leftMargin - $rightMargin; // ~196mm for Letter portrait
+
+// Adjusted column widths for portrait mode (total must fit in ~196mm)
+// Letter portrait: 216mm - 20mm margins = 196mm usable width
+$colWidths = [
+    'num' => 8,       // For "TOTAL" and numbers
+    'name' => 25,
+    'email' => 33,    // Increased for full email addresses
+    'contact' => 17,
+    'gender' => 11,
+    'municipality' => 20,
+    'college' => 23,  // Increased for college names
+    'course' => 23,   // Increased for course names
+    'status' => 15,
+    'date' => 18      // Increased for full date format
+];
+$tableWidth = array_sum($colWidths); // Total: 197mm (fits within usable width)
+$tableStartX = $leftMargin;
 
 // Table Header
-$pdf->SetFillColor(79, 70, 229);
-$pdf->SetTextColor(255, 255, 255);
+$pdf->SetFillColor(255, 255, 255);
+$pdf->SetTextColor(0, 0, 0);
 $pdf->SetFont('Arial', 'B', 7);
 
 $pdf->SetX($tableStartX);
-$pdf->Cell(8, 8, '#', 1, 0, 'C', true);
-$pdf->Cell(28, 8, 'Full Name', 1, 0, 'L', true);
-$pdf->Cell(32, 8, 'Email', 1, 0, 'L', true);
-$pdf->Cell(22, 8, 'Contact', 1, 0, 'L', true);
-$pdf->Cell(12, 8, 'Gender', 1, 0, 'L', true);
-$pdf->Cell(25, 8, 'Municipality', 1, 0, 'L', true);
-$pdf->Cell(30, 8, 'College', 1, 0, 'L', true);
-$pdf->Cell(30, 8, 'Course', 1, 0, 'L', true);
-$pdf->Cell(20, 8, 'Status', 1, 0, 'L', true);
-$pdf->Cell(20, 8, 'Date Applied', 1, 1, 'L', true);
+$pdf->Cell($colWidths['num'], 8, '#', 1, 0, 'C', true);
+$pdf->Cell($colWidths['name'], 8, 'Full Name', 1, 0, 'L', true);
+$pdf->Cell($colWidths['email'], 8, 'Email', 1, 0, 'L', true);
+$pdf->Cell($colWidths['contact'], 8, 'Contact', 1, 0, 'L', true);
+$pdf->Cell($colWidths['gender'], 8, 'Gender', 1, 0, 'L', true);
+$pdf->Cell($colWidths['municipality'], 8, 'Municipality', 1, 0, 'L', true);
+$pdf->Cell($colWidths['college'], 8, 'College', 1, 0, 'L', true);
+$pdf->Cell($colWidths['course'], 8, 'Course', 1, 0, 'L', true);
+$pdf->Cell($colWidths['status'], 8, 'Status', 1, 0, 'L', true);
+$pdf->Cell($colWidths['date'], 8, 'Date Applied', 1, 1, 'L', true);
 
 // Table Data
 $pdf->SetFont('Arial', '', 6);
 $pdf->SetTextColor(0, 0, 0);
+$pdf->SetFillColor(255, 255, 255);
 
 foreach ($applicants as $index => $applicant) {
-    // Alternate row colors
-    if ($index % 2 == 0) {
-        $pdf->SetFillColor(255, 255, 255);
-    } else {
-        $pdf->SetFillColor(248, 250, 252);
-    }
-    
     // Full name
     $fullName = trim(($applicant['lastname'] ?? '') . ', ' . ($applicant['firstname'] ?? '') . ' ' . ($applicant['middlename'] ?? ''));
     if (empty($fullName) || $fullName === ',') {
         $fullName = 'N/A';
     }
     
-    // Status color
+    // Status
     $status = $applicant['application_status'] ?? 'N/A';
-    if ($status === 'Approved') {
-        $statusColor = [16, 185, 129];
-    } elseif ($status === 'Denied') {
-        $statusColor = [239, 68, 68];
-    } elseif ($status === 'Under Review') {
-        $statusColor = [245, 158, 11];
-    } else {
-        $statusColor = [100, 116, 139];
-    }
     
     // Date formatting
     $dateApplied = 'N/A';
@@ -239,40 +301,54 @@ foreach ($applicants as $index => $applicant) {
     }
     
     $pdf->SetX($tableStartX);
-    $pdf->Cell(8, 6, ($index + 1), 1, 0, 'C', true);
-    $pdf->Cell(28, 6, substr($fullName, 0, 20), 1, 0, 'L', true);
-    $pdf->Cell(32, 6, substr($applicant['email'] ?? 'N/A', 0, 25), 1, 0, 'L', true);
-    $pdf->Cell(22, 6, $applicant['contact_no'] ?? 'N/A', 1, 0, 'L', true);
-    $pdf->Cell(12, 6, ucfirst($applicant['gender'] ?? 'N/A'), 1, 0, 'L', true);
-    $pdf->Cell(25, 6, substr($applicant['municipality'] ?? 'N/A', 0, 18), 1, 0, 'L', true);
-    $pdf->Cell(30, 6, substr($applicant['current_college'] ?? 'N/A', 0, 22), 1, 0, 'L', true);
-    $pdf->Cell(30, 6, substr($applicant['course'] ?? 'N/A', 0, 22), 1, 0, 'L', true);
-    
-    // Status with color
-    $pdf->SetTextColor($statusColor[0], $statusColor[1], $statusColor[2]);
-    $pdf->SetFont('Arial', 'B', 6);
-    $pdf->Cell(20, 6, $status, 1, 0, 'L', true);
-    
-    // Reset color
-    $pdf->SetTextColor(0, 0, 0);
-    $pdf->SetFont('Arial', '', 6);
-    $pdf->Cell(20, 6, $dateApplied, 1, 1, 'L', true);
+    $pdf->Cell($colWidths['num'], 6, ($index + 1), 1, 0, 'C', true);
+    // At font size 6, Arial is approximately 1.2-1.5mm per character
+    // Use more generous multipliers to allow more text to display
+    $pdf->Cell($colWidths['name'], 6, substr($fullName, 0, floor($colWidths['name'] * 0.7)), 1, 0, 'L', true);
+    $pdf->Cell($colWidths['email'], 6, substr($applicant['email'] ?? 'N/A', 0, floor($colWidths['email'] * 0.7)), 1, 0, 'L', true);
+    $pdf->Cell($colWidths['contact'], 6, substr($applicant['contact_no'] ?? 'N/A', 0, floor($colWidths['contact'] * 0.8)), 1, 0, 'L', true);
+    $pdf->Cell($colWidths['gender'], 6, ucfirst($applicant['gender'] ?? 'N/A'), 1, 0, 'L', true);
+    $pdf->Cell($colWidths['municipality'], 6, substr($applicant['municipality'] ?? 'N/A', 0, floor($colWidths['municipality'] * 0.7)), 1, 0, 'L', true);
+    $pdf->Cell($colWidths['college'], 6, substr($applicant['current_college'] ?? 'N/A', 0, floor($colWidths['college'] * 0.7)), 1, 0, 'L', true);
+    $pdf->Cell($colWidths['course'], 6, substr($applicant['course'] ?? 'N/A', 0, floor($colWidths['course'] * 0.7)), 1, 0, 'L', true);
+    $pdf->Cell($colWidths['status'], 6, $status, 1, 0, 'L', true);
+    $pdf->Cell($colWidths['date'], 6, $dateApplied, 1, 1, 'L', true);
 }
+
+// Total Row
+$pdf->SetFont('Arial', 'B', 6); // Slightly smaller font to ensure "TOTAL" fits
+$pdf->SetFillColor(255, 255, 255);
+$pdf->SetX($tableStartX);
+$pdf->Cell($colWidths['num'], 7, 'TOTAL', 1, 0, 'C', true); // "TOTAL" text in # column
+$pdf->Cell($colWidths['name'], 7, '', 1, 0, 'L', true);
+$pdf->Cell($colWidths['email'], 7, '', 1, 0, 'L', true);
+$pdf->Cell($colWidths['contact'], 7, '', 1, 0, 'L', true);
+$pdf->Cell($colWidths['gender'], 7, '', 1, 0, 'L', true);
+$pdf->Cell($colWidths['municipality'], 7, '', 1, 0, 'L', true);
+$pdf->Cell($colWidths['college'], 7, '', 1, 0, 'L', true);
+$pdf->Cell($colWidths['course'], 7, '', 1, 0, 'L', true);
+$pdf->Cell($colWidths['status'], 7, '', 1, 0, 'L', true);
+$pdf->Cell($colWidths['date'], 7, (string)count($applicants), 1, 1, 'C', true); // Total count at end of row
 
 // Output PDF
 try {
-    // Clean output buffer to ensure no stray output
-    if (ob_get_length()) {
-        ob_clean();
+    // Clean all output buffers to ensure no stray output
+    while (ob_get_level() > 0) {
+        ob_end_clean();
     }
     
     $filename = 'iSCHO_Applicants_Report_' . preg_replace('/[^a-z0-9]/i', '_', $program_name) . '_' . date('Y_m_d') . '.pdf';
     
     // Output as download
     $pdf->Output('D', $filename);
+    exit;
 } catch (Exception $e) {
+    // Clean all output buffers before sending error
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
     error_log("PDF Output Error: " . $e->getMessage());
     http_response_code(500);
+    header('Content-Type: text/plain');
     exit('Error generating PDF: ' . $e->getMessage());
 }
-exit;
