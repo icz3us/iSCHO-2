@@ -1,11 +1,4 @@
 <?php
-/**
- * Redis Connection Manager
- * Handles Redis connection, reconnection, and error handling
- * 
- * @package iSCHO
- * @version 2.0
- */
 
 class RedisManager {
     private static $instance = null;

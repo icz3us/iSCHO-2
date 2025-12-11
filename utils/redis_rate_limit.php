@@ -52,7 +52,15 @@ class RedisRateLimit {
             if ($attempts >= $maxAttempts) {
                 // Get oldest attempt to calculate reset time
                 $oldest = $client->zrange($zsetKey, 0, 0, ['WITHSCORES' => true]);
-                $resetTime = !empty($oldest) ? (int)$oldest[1] + $windowSeconds : $current + $windowSeconds;
+                // zrange with WITHSCORES returns associative array: ['value' => score]
+                $resetTime = $current + $windowSeconds;
+                if (!empty($oldest) && is_array($oldest)) {
+                    // Get the first score (timestamp) from the array
+                    $scores = array_values($oldest);
+                    if (!empty($scores) && isset($scores[0])) {
+                        $resetTime = (int)$scores[0] + $windowSeconds;
+                    }
+                }
                 
                 return [
                     'allowed' => false,
@@ -63,7 +71,9 @@ class RedisRateLimit {
             }
 
             // Add current attempt
-            $client->zadd($zsetKey, $current, $current . ':' . uniqid());
+            // Predis zadd syntax: zadd(key, [member => score])
+            $member = $current . ':' . uniqid();
+            $client->zadd($zsetKey, [$member => $current]);
             
             // Set expiration on the sorted set
             $client->expire($zsetKey, $windowSeconds);
