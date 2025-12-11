@@ -4,11 +4,17 @@ require_once __DIR__ . '/vendor/autoload.php';
 require 'philippine_locations.php';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/utils/encryption.php';
+require_once __DIR__ . '/utils/redis_otp.php';
+require_once __DIR__ . '/utils/redis_rate_limit.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
+
+// Initialize Redis OTP and Rate Limiting
+$redisOTP = new RedisOTP(600); // 10 minutes TTL
+$rateLimit = new RedisRateLimit();
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -174,53 +180,67 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['register']) && !isset(
     }
 
     if (empty($register_error)) {
-        $otp = generateOTP();
-        $expires_at = date('Y-m-d H:i:s', strtotime('+10 minutes'));
+        // Check OTP rate limit (3 requests per hour)
+        $rateCheck = $rateLimit->checkOTPLimit($email, 3, 3600);
+        if (!$rateCheck['allowed']) {
+            $register_error = "Too many OTP requests. Please try again after " . date('H:i:s', $rateCheck['reset']);
+            error_log("OTP Rate Limit Exceeded for email: $email");
+        } else {
+            // Store pending registration data
+            $_SESSION['pending_registration'] = [
+                'municipality' => $municipality,
+                'barangay' => $barangay,
+                'firstname' => $firstname,
+                'lastname' => $lastname,
+                'middlename' => $middlename,
+                'sex' => $sex,
+                'civil_status' => $civil_status,
+                'birthdate' => $birthdate,
+                'place_of_birth' => $place_of_birth,
+                'contact_no' => $contact_no,
+                'email' => $email,
+                'password' => $password
+            ];
 
-        $_SESSION['pending_registration'] = [
-            'municipality' => $municipality,
-            'barangay' => $barangay,
-            'firstname' => $firstname,
-            'lastname' => $lastname,
-            'middlename' => $middlename,
-            'sex' => $sex,
-            'civil_status' => $civil_status,
-            'birthdate' => $birthdate,
-            'place_of_birth' => $place_of_birth,
-            'contact_no' => $contact_no,
-            'email' => $email,
-            'password' => $password
-        ];
+            // Generate OTP using Redis (10 minutes TTL)
+            $otp = $redisOTP->generateOTP($email, 600);
+            
+            if ($otp) {
+                error_log("OTP generated and stored in Redis for email: $email");
+                
+                // Also store in database for backward compatibility (optional)
+                try {
+                    $expires_at = date('Y-m-d H:i:s', strtotime('+10 minutes'));
+                    $stmt = $pdo->prepare("
+                        INSERT INTO otp_verifications (email, otp, expires_at)
+                        VALUES (?, ?, ?)
+                    ");
+                    $stmt->execute([$email, $otp, $expires_at]);
+                } catch (PDOException $e) {
+                    // Non-critical - Redis is primary storage
+                    error_log("OTP Database Backup Storage Error: " . $e->getMessage());
+                }
 
-        try {
-            // Don't include user_id in INSERT since user doesn't exist yet
-            // user_id will be set later when OTP is verified and user account is created
-            $stmt = $pdo->prepare("
-                INSERT INTO otp_verifications (email, otp, expires_at)
-                VALUES (?, ?, ?)
-            ");
-            $stmt->execute([$email, $otp, $expires_at]);
-            error_log("OTP stored successfully for email: $email, OTP: $otp, Expires At: $expires_at");
-        } catch (PDOException $e) {
-            $register_error = "Failed to store OTP: " . $e->getMessage();
-            error_log("OTP Storage Error: " . $e->getMessage());
-            unset($_SESSION['pending_registration']);
-            $_SESSION['show_register_popup'] = true; 
-        }
-
-        if (empty($register_error)) {
-            $email_result = sendOTP($email, $otp);
-            if ($email_result !== true) {
-                $register_error = $email_result;
-                error_log("Email Sending Error: $register_error");
-                unset($_SESSION['pending_registration']);
-                $_SESSION['show_register_popup'] = true; 
+                // Send OTP email
+                $email_result = sendOTP($email, $otp);
+                if ($email_result !== true) {
+                    $register_error = $email_result;
+                    error_log("Email Sending Error: $register_error");
+                    $redisOTP->deleteOTP($email); // Clean up Redis OTP on email failure
+                    unset($_SESSION['pending_registration']);
+                    $_SESSION['show_register_popup'] = true; 
+                } else {
+                    $_SESSION['otp_email'] = $email;
+                    $_SESSION['otp_verification_pending'] = true; 
+                    $_SESSION['show_otp_popup'] = true;
+                    $_SESSION['show_register_popup'] = false; 
+                    error_log("OTP email sent successfully to: $email");
+                }
             } else {
-                $_SESSION['otp_email'] = $email;
-                $_SESSION['otp_verification_pending'] = true; 
-                $_SESSION['show_otp_popup'] = true;
-                $_SESSION['show_register_popup'] = false; 
-                error_log("OTP email sent successfully to: $email");
+                $register_error = "Failed to generate OTP. Please try again.";
+                error_log("OTP Generation Failed for email: $email");
+                unset($_SESSION['pending_registration']);
+                $_SESSION['show_register_popup'] = true;
             }
         }
     }
@@ -245,52 +265,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset
         $email = $_SESSION['otp_email'];
         $pending_data = $_SESSION['pending_registration'];
 
-        try {
-            $stmt = $pdo->prepare("
-                SELECT id, otp, expires_at, verified
-                FROM otp_verifications
-                WHERE email = ? AND verified = 0
-                ORDER BY created_at DESC
-                LIMIT 1
-            ");
-            $stmt->execute([$email]);
-            $otp_record = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$otp_record) {
-                $stmt = $pdo->prepare("SELECT id, otp, expires_at, verified FROM otp_verifications WHERE email = ? ORDER BY created_at DESC LIMIT 1");
-                $stmt->execute([$email]);
-                $debug_record = $stmt->fetch(PDO::FETCH_ASSOC);
-                
-                if ($debug_record) {
-                    error_log("OTP Debug - Record found but not matched: Email: $email, OTP: {$debug_record['otp']}, Verified: {$debug_record['verified']}, Expires At: {$debug_record['expires_at']}");
-                    $_SESSION['otp_error'] = "No valid OTP found for this email. The OTP may have been used or expired.";
-                } else {
-                    error_log("OTP Debug - No OTP record found for email: $email");
-                    $_SESSION['otp_error'] = "No OTP record exists for this email. Please try registering again.";
-                }
-                $_SESSION['show_otp_popup'] = true; 
-                $_SESSION['show_register_popup'] = false; 
-            } else {
-                $stored_otp = (string)$otp_record['otp'];
-                $otp_input = (string)$otp_code;
-                $expires_at = strtotime($otp_record['expires_at']);
-                $current_time = time();
-
-                error_log("OTP Verification Attempt - Email: $email, Input OTP: $otp_input, Stored OTP: $stored_otp, Expires At: " . $otp_record['expires_at'] . ", Current Time: $current_time, Expires Timestamp: $expires_at");
-
-                if ($otp_input !== $stored_otp) {
-                    $_SESSION['otp_validation_error'] = "Invalid OTP. Please try again.";
-                    error_log("OTP Verification Failed - Email: $email, Input OTP: $otp_input, Stored OTP: $stored_otp");
-                    $_SESSION['show_otp_popup'] = true; 
-                    $_SESSION['show_register_popup'] = false; 
-                } elseif ($expires_at <= $current_time) {
-                    $_SESSION['otp_validation_error'] = "OTP has expired. Please request a new one.";
-                    error_log("OTP Verification Failed - OTP Expired for Email: $email");
-                    $_SESSION['show_otp_popup'] = true; 
-                    $_SESSION['show_register_popup'] = false; 
-                } else {
-                    $transactionStarted = false;
-                    try {
+        // Verify OTP using Redis (max 5 attempts)
+        $otpResult = $redisOTP->verifyOTP($email, $otp_code, 5);
+        
+        if (!$otpResult['valid']) {
+            $_SESSION['otp_validation_error'] = $otpResult['message'];
+            error_log("OTP Verification Failed - Email: $email, Message: " . $otpResult['message']);
+            $_SESSION['show_otp_popup'] = true; 
+            $_SESSION['show_register_popup'] = false;
+        } else {
+            // OTP is valid, proceed with registration
+            error_log("OTP Verified Successfully - Email: $email");
+            
+            $transactionStarted = false;
+            try {
                         $pdo->exec("SET autocommit = 0");
                         error_log("Autocommit disabled for email: $email");
 
@@ -352,13 +340,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset
                         ]);
                         error_log("Inserted into users_info table for user_id: $user_id");
 
-                        $stmt = $pdo->prepare("
-                            UPDATE otp_verifications
-                            SET verified = 1, user_id = ?
-                            WHERE id = ?
-                        ");
-                        $stmt->execute([$user_id, $otp_record['id']]);
-                        error_log("Updated otp_verifications, set verified = 1 and user_id = $user_id for OTP record id: " . $otp_record['id']);
+                        // Update OTP verification in database for audit (if record exists)
+                        try {
+                            $stmt = $pdo->prepare("
+                                UPDATE otp_verifications
+                                SET verified = 1, user_id = ?
+                                WHERE email = ? AND verified = 0
+                                ORDER BY created_at DESC
+                                LIMIT 1
+                            ");
+                            $stmt->execute([$user_id, $email]);
+                            error_log("Updated otp_verifications for email: $email, user_id: $user_id");
+                        } catch (PDOException $e) {
+                            // Non-critical - Redis is primary storage
+                            error_log("OTP Database Update Error (non-critical): " . $e->getMessage());
+                        }
 
                         $pdo->commit();
                         error_log("Transaction committed successfully for email: $email, user_id: $user_id");
@@ -378,33 +374,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_otp']) && isset
                         unset($_SESSION['otp_validation_error']);
 
                         error_log("Registration Successful - Email: $email, User ID: $user_id");
-                    } catch (PDOException $e) {
-                        if ($transactionStarted) {
-                            try {
-                                $pdo->rollBack();
-                                error_log("Transaction rolled back due to error: " . $e->getMessage());
-                            } catch (PDOException $rollbackError) {
-                                error_log("Rollback Error: " . $rollbackError->getMessage());
-                            }
-                        }
-                        try {
-                            $pdo->exec("SET autocommit = 1");
-                            error_log("Autocommit restored after failure for email: $email");
-                        } catch (PDOException $autocommitError) {
-                            error_log("Failed to restore autocommit: " . $autocommitError->getMessage());
-                        }
-                        $_SESSION['otp_error'] = "Failed to complete registration: " . $e->getMessage();
-                        error_log("Registration Error: " . $e->getMessage());
-                        $_SESSION['show_otp_popup'] = true; 
-                        $_SESSION['show_register_popup'] = false; 
+            } catch (PDOException $e) {
+                if ($transactionStarted) {
+                    try {
+                        $pdo->rollBack();
+                        error_log("Transaction rolled back due to error: " . $e->getMessage());
+                    } catch (PDOException $rollbackError) {
+                        error_log("Rollback Error: " . $rollbackError->getMessage());
                     }
                 }
+                try {
+                    $pdo->exec("SET autocommit = 1");
+                    error_log("Autocommit restored after failure for email: $email");
+                } catch (PDOException $autocommitError) {
+                    error_log("Failed to restore autocommit: " . $autocommitError->getMessage());
+                }
+                $_SESSION['otp_error'] = "Failed to complete registration: " . $e->getMessage();
+                error_log("Registration Error: " . $e->getMessage());
+                $_SESSION['show_otp_popup'] = true; 
+                $_SESSION['show_register_popup'] = false; 
             }
-        } catch (PDOException $e) {
-            $_SESSION['otp_error'] = "Failed to verify OTP: " . $e->getMessage();
-            error_log("OTP Verification Error: " . $e->getMessage());
-            $_SESSION['show_otp_popup'] = true; 
-            $_SESSION['show_register_popup'] = false; 
         }
     }
 }
@@ -414,12 +403,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
     error_log("Login handler triggered");
     $email = $_POST['email'];
     $password = $_POST['password'];
+    
+    // Check login rate limit (5 attempts per 15 minutes)
+    $identifier = $email . ':' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+    $rateCheck = $rateLimit->checkLoginLimit($identifier, 5, 900);
+    
+    if (!$rateCheck['allowed']) {
+        $login_error = "Too many login attempts. Please try again after " . date('H:i:s', $rateCheck['reset']);
+        error_log("Login Rate Limit Exceeded for: $identifier");
+    } else {
+        $stmt = $pdo->prepare("SELECT id, firstname, lastname, middlename, role, password, program_id FROM users WHERE email = ?");
+        $stmt->execute([$email]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $stmt = $pdo->prepare("SELECT id, firstname, lastname, middlename, role, password, program_id FROM users WHERE email = ?");
-    $stmt->execute([$email]);
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($user && password_verify($password, $user['password'])) {
+        if ($user && password_verify($password, $user['password'])) {
         $token = generateJWT($user['id'], $user['role']);
         // No need to insert token into the database for stateless JWT
 
@@ -442,9 +439,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['register']) && !isset
                 exit;
             } else {
                 $login_error = "Unknown role: " . htmlspecialchars($user['role']) . ". Please contact support.";
+            }
+        } else {
+            $login_error = "Invalid email or password";
         }
-    } else {
-        $login_error = "Invalid email or password";
     }
 }
 

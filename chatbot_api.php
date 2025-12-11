@@ -1,6 +1,7 @@
 <?php
 // Gemini AI Chatbot API Endpoint using official PHP client
 require_once 'vendor/autoload.php';
+require_once __DIR__ . '/utils/redis_chatbot.php';
 
 // Load environment variables
 if (file_exists('.env')) {
@@ -12,6 +13,17 @@ if (file_exists('.env')) {
 
 use GeminiAPI\Client;
 use GeminiAPI\Resources\Parts\TextPart;
+
+// Initialize Redis chatbot storage
+$redisChatbot = new RedisChatbot(86400); // 24 hours TTL
+
+// Get or create session ID
+session_start();
+if (!isset($_SESSION['chatbot_session_id'])) {
+    $_SESSION['chatbot_session_id'] = uniqid('chat_', true);
+}
+$session_id = $_SESSION['chatbot_session_id'];
+$user_id = $_SESSION['user_id'] ?? 0;
 
 header('Content-Type: application/json');
 
@@ -43,10 +55,17 @@ if (empty($userMessage)) {
     exit;
 }
 
+// Store user message in Redis
+$redisChatbot->addMessage($user_id, $session_id, 'user', $userMessage);
+
+// Get conversation context for AI (last 10 messages)
+$context = $redisChatbot->getContext($session_id, 10);
+
 // Prepare the prompt for the Gemini AI
 // Add context about the scholarship application system
 $prompt = "You are a helpful scholarship application assistant for the iSCHO system. 
-The user is asking: \"$userMessage\"
+
+" . (!empty($context) ? "Previous conversation:\n$context\n\n" : "") . "The user is asking: \"$userMessage\"
 
 Please provide a helpful, concise response related to scholarship applications, requirements, or the application process.
 If the question is not related to scholarships or this system, politely redirect them to scholarship-related questions.
@@ -72,9 +91,15 @@ try {
     // Extract the AI response
     if (isset($response->candidates[0]->content->parts[0]->text)) {
         $aiResponse = $response->candidates[0]->content->parts[0]->text;
+        
+        // Store assistant response in Redis
+        $redisChatbot->addMessage($user_id, $session_id, 'assistant', $aiResponse);
+        
         echo json_encode(['response' => $aiResponse]);
     } else {
-        echo json_encode(['response' => 'Sorry, I couldn\'t process that request. Please try again.']);
+        $errorResponse = 'Sorry, I couldn\'t process that request. Please try again.';
+        $redisChatbot->addMessage($user_id, $session_id, 'assistant', $errorResponse);
+        echo json_encode(['response' => $errorResponse]);
     }
 } catch (Exception $e) {
     // Handle any exceptions that occur during the API call

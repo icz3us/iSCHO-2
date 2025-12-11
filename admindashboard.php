@@ -1,5 +1,9 @@
 <?php
 require './route_guard.php';
+require_once __DIR__ . '/utils/query_cache.php';
+
+// Initialize query cache (5 minutes default TTL)
+$queryCache = new QueryCache(300);
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -277,43 +281,42 @@ $denied_applicants = 0;
 $under_review_applicants = 0;
 
 try {
-    // Count total applicants for this admin's program
+    // Count total applicants for this admin's program (cached)
     if ($admin_program_id) {
-        $stmt = $pdo->prepare("
-            SELECT COUNT(*) 
-            FROM users u
-            INNER JOIN users_info ui ON u.id = ui.user_id
-            WHERE u.role = 'Applicant' AND ui.program_id = ?
-        ");
-        $stmt->execute([$admin_program_id]);
-        $total_applicants = $stmt->fetchColumn();
+        $total_applicants = cachedQuery(
+            $pdo,
+            "SELECT COUNT(*) as count FROM users u INNER JOIN users_info ui ON u.id = ui.user_id WHERE u.role = 'Applicant' AND ui.program_id = ?",
+            [$admin_program_id],
+            $queryCache,
+            300 // 5 minutes cache
+        )[0]['count'] ?? 0;
 
-        // Count approved applicants
-        $stmt = $pdo->prepare("
-            SELECT COUNT(*) 
-            FROM users_info 
-            WHERE application_status = 'Approved' AND program_id = ?
-        ");
-        $stmt->execute([$admin_program_id]);
-        $approved_applicants = $stmt->fetchColumn();
+        // Count approved applicants (cached)
+        $approved_applicants = cachedQuery(
+            $pdo,
+            "SELECT COUNT(*) as count FROM users_info WHERE application_status = 'Approved' AND program_id = ?",
+            [$admin_program_id],
+            $queryCache,
+            300
+        )[0]['count'] ?? 0;
 
-        // Count denied applicants
-        $stmt = $pdo->prepare("
-            SELECT COUNT(*) 
-            FROM users_info 
-            WHERE application_status = 'Denied' AND program_id = ?
-        ");
-        $stmt->execute([$admin_program_id]);
-        $denied_applicants = $stmt->fetchColumn();
+        // Count denied applicants (cached)
+        $denied_applicants = cachedQuery(
+            $pdo,
+            "SELECT COUNT(*) as count FROM users_info WHERE application_status = 'Denied' AND program_id = ?",
+            [$admin_program_id],
+            $queryCache,
+            300
+        )[0]['count'] ?? 0;
 
-        // Count under review applicants
-        $stmt = $pdo->prepare("
-            SELECT COUNT(*) 
-            FROM users_info 
-            WHERE application_status = 'Under Review' AND program_id = ?
-        ");
-        $stmt->execute([$admin_program_id]);
-        $under_review_applicants = $stmt->fetchColumn();
+        // Count under review applicants (cached)
+        $under_review_applicants = cachedQuery(
+            $pdo,
+            "SELECT COUNT(*) as count FROM users_info WHERE application_status = 'Under Review' AND program_id = ?",
+            [$admin_program_id],
+            $queryCache,
+            300
+        )[0]['count'] ?? 0;
     }
 
 } catch (PDOException $e) {
@@ -326,15 +329,14 @@ $other_count = 0;
 
 try {
     if ($admin_program_id) {
-        $stmt = $pdo->prepare("
-            SELECT sex, COUNT(*) as count 
-            FROM users_info ui
-            JOIN users u ON ui.user_id = u.id
-            WHERE u.role = 'Applicant' AND ui.program_id = ?
-            GROUP BY sex
-        ");
-        $stmt->execute([$admin_program_id]);
-        $gender_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // Cache gender statistics (5 minutes)
+        $gender_data = cachedQuery(
+            $pdo,
+            "SELECT sex, COUNT(*) as count FROM users_info ui JOIN users u ON ui.user_id = u.id WHERE u.role = 'Applicant' AND ui.program_id = ? GROUP BY sex",
+            [$admin_program_id],
+            $queryCache,
+            300
+        );
     } else {
         $gender_data = [];
     }
@@ -842,21 +844,14 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
 $municipality_stats = [];
 if ($admin_program_id) {
     try {
-        $stmt = $pdo->prepare("
-            SELECT ui.municipality, COUNT(*) as total_count,
-                SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
-                SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
-            FROM users_info ui 
-            JOIN users u ON ui.user_id = u.id
-            WHERE ui.municipality IS NOT NULL 
-                AND ui.municipality != ''
-                AND u.role = 'Applicant'
-                AND ui.program_id = ?
-            GROUP BY ui.municipality 
-            ORDER BY ui.municipality ASC
-        ");
-        $stmt->execute([$admin_program_id]);
-        $municipality_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // Cache municipality statistics (10 minutes)
+        $municipality_stats = cachedQuery(
+            $pdo,
+            "SELECT ui.municipality, COUNT(*) as total_count, SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count, SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count FROM users_info ui JOIN users u ON ui.user_id = u.id WHERE ui.municipality IS NOT NULL AND ui.municipality != '' AND u.role = 'Applicant' AND ui.program_id = ? GROUP BY ui.municipality ORDER BY ui.municipality ASC",
+            [$admin_program_id],
+            $queryCache,
+            600
+        );
     } catch (PDOException $e) {
         error_log("Error fetching municipality statistics: " . $e->getMessage());
     }
