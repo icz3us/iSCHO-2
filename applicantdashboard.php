@@ -38,6 +38,78 @@ $has_application = false;
 $application_deadline = null;
 $is_application_open = false;
 $application_status = 'Not Yet Submitted';
+
+/**
+ * Check if a scholarship program is currently available for application
+ * @param string|null $start_date Application start date (YYYY-MM-DD)
+ * @param string|null $end_date Application end date (YYYY-MM-DD)
+ * @return bool True if the program is available, false otherwise
+ */
+function isProgramAvailable($start_date, $end_date) {
+    // If both dates are null, the program is always available
+    if (empty($start_date) && empty($end_date)) {
+        return true;
+    }
+    
+    $today = date('Y-m-d');
+    
+    // If start date is not set, check only end date
+    if (empty($start_date)) {
+        return empty($end_date) || $today <= $end_date;
+    }
+    
+    // If end date is not set, check only start date
+    if (empty($end_date)) {
+        return $today >= $start_date;
+    }
+    
+    // Both dates are set, check if today is within the application period
+    return $today >= $start_date && $today <= $end_date;
+}
+
+/**
+ * Get a descriptive message about program availability
+ * @param string|null $start_date Application start date (YYYY-MM-DD)
+ * @param string|null $end_date Application end date (YYYY-MM-DD)
+ * @return string Availability message
+ */
+function getProgramAvailabilityMessage($start_date, $end_date) {
+    // If both dates are null, the program is always available
+    if (empty($start_date) && empty($end_date)) {
+        return 'Open for application';
+    }
+    
+    $today = date('Y-m-d');
+    
+    // If start date is not set
+    if (empty($start_date)) {
+        if (empty($end_date)) {
+            return 'Open for application';
+        } elseif ($today > $end_date) {
+            return 'Application period has ended on ' . date('M d, Y', strtotime($end_date));
+        } else {
+            return 'Open for application until ' . date('M d, Y', strtotime($end_date));
+        }
+    }
+    
+    // If end date is not set
+    if (empty($end_date)) {
+        if ($today < $start_date) {
+            return 'Application starts on ' . date('M d, Y', strtotime($start_date));
+        } else {
+            return 'Open for application';
+        }
+    }
+    
+    // Both dates are set
+    if ($today < $start_date) {
+        return 'Application starts on ' . date('M d, Y', strtotime($start_date));
+    } elseif ($today > $end_date) {
+        return 'Application period has ended on ' . date('M d, Y', strtotime($end_date));
+    } else {
+        return 'Open for application until ' . date('M d, Y', strtotime($end_date));
+    }
+}
 $notices = [];
 $claim_status = 'Not Claimed';
 $claim_photo_path = '';
@@ -92,6 +164,13 @@ try {
         // Fetch claim status and photo
         $claim_status = isset($users_info['claim_status']) && $users_info['claim_status'] === 'Claimed' ? 'Claimed' : 'Not Claimed';
         $claim_photo_path = !empty($user_docs['claim_photo_path']) ? $user_docs['claim_photo_path'] : '';
+        
+        // Fetch document verification status
+        require_once './utils/document_verification.php';
+        $docVerification = new DocumentVerification($pdo);
+        $doc_verification_status = $docVerification->getUserDocumentStatus($user_id);
+    } else {
+        $doc_verification_status = [];
     }
 
     $stmt = $pdo->prepare("SELECT message, created_at FROM notices WHERE user_id = ? ORDER BY created_at DESC");
@@ -115,8 +194,73 @@ try {
 
 $formatted_deadline = $application_deadline ? date('m/d/Y', strtotime($application_deadline)) : 'Not Set';
 
+// Fetch all active scholarship programs
+$scholarship_programs = [];
+try {
+    // Fetch all active scholarship programs with application dates
+    $stmt = $pdo->prepare("SELECT id, program_name, program_description, application_start_date, application_end_date FROM scholarship_programs WHERE is_active = 1 ORDER BY program_name");
+    $stmt->execute();
+    $scholarship_programs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Add availability status to each program
+    foreach ($scholarship_programs as &$program) {
+        $program['is_available'] = isProgramAvailable($program['application_start_date'], $program['application_end_date']);
+        $program['availability_message'] = getProgramAvailabilityMessage($program['application_start_date'], $program['application_end_date']);
+    }
+    unset($program); // Break the reference
+} catch (PDOException $e) {
+    error_log("Error fetching programs: " . $e->getMessage());
+}
+
+// Get user's current program_id if they already have an application
+$user_program_id = null;
+try {
+    $stmt = $pdo->prepare("SELECT program_id FROM users_info WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($result && $result['program_id']) {
+        $user_program_id = $result['program_id'];
+    }
+} catch (PDOException $e) {
+    error_log("Error fetching user program: " . $e->getMessage());
+}
+
 // Handle Form Submission
 if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_application'])) {
+    // CSRF Protection
+    require_once './utils/file_security.php';
+    if (!validateCSRFToken()) {
+        $_SESSION['application_error'] = "Security token validation failed. Please try again.";
+        header('Location: applicantdashboard.php?view=Application');
+        exit;
+    }
+    
+    // Program Selection
+    $program_id = !empty($_POST['program_id']) ? intval($_POST['program_id']) : null;
+    
+    if (empty($program_id)) {
+        $_SESSION['application_error'] = "Please select a scholarship program.";
+        header('Location: applicantdashboard.php?view=Application');
+        exit;
+    }
+    
+    // Check if the selected program is available for application
+    $stmt = $pdo->prepare("SELECT application_start_date, application_end_date FROM scholarship_programs WHERE id = ? AND is_active = 1");
+    $stmt->execute([$program_id]);
+    $program = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$program) {
+        $_SESSION['application_error'] = "Selected scholarship program is not available.";
+        header('Location: applicantdashboard.php?view=Application');
+        exit;
+    }
+    
+    if (!isProgramAvailable($program['application_start_date'], $program['application_end_date'])) {
+        $_SESSION['application_error'] = "The selected scholarship program is not currently accepting applications: " . getProgramAvailabilityMessage($program['application_start_date'], $program['application_end_date']);
+        header('Location: applicantdashboard.php?view=Application');
+        exit;
+    }
+    
     // Personal Information
     $lastname = trim($_POST['lastname'] ?? '');
     $firstname = trim($_POST['firstname'] ?? '');
@@ -135,11 +279,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
 
     // Residency Information
     $permanent_address = trim($_POST['permanent_address'] ?? '');
-    $residency_duration = trim($_POST['residency_duration'] ?? '');
-    $registered_voter = trim($_POST['registered_voter'] ?? '');
-    $father_voting_duration = trim($_POST['father_voting_duration'] ?? null);
-    $mother_voting_duration = trim($_POST['mother_voting_duration'] ?? null);
-    $applicant_voting_duration = trim($_POST['applicant_voting_duration'] ?? null);
     $guardian_name = trim($_POST['guardian_name'] ?? '');
     $relationship = trim($_POST['relationship'] ?? '');
     $guardian_address = trim($_POST['guardian_address'] ?? '');
@@ -184,8 +323,6 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
         'course' => $course,
         'current_college' => $current_college,
         'permanent_address' => $permanent_address,
-        'residency_duration' => $residency_duration,
-        'registered_voter' => $registered_voter,
         'guardian_name' => $guardian_name,
         'relationship' => $relationship,
         'guardian_address' => $guardian_address,
@@ -216,15 +353,15 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
         }
     }
 
-    // File Upload Handling
-    $upload_dir = './Uploads/';
-    if (!is_dir($upload_dir)) {
-        mkdir($upload_dir, 0777, true);
-    }
-
-    $allowed_types = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
-    $max_size = 5 * 1024 * 1024;
-
+    // Secure File Upload Handling
+    require_once './utils/file_security.php';
+    require_once './utils/document_verification.php';
+    require_once './utils/data_validation.php';
+    
+    $fileSecurity = new FileSecurity($pdo);
+    $docVerification = new DocumentVerification($pdo);
+    $dataValidation = new DataValidation($pdo);
+    
     $upload_error = '';
     $file_paths = [
         'cor_file' => $user_docs['cor_file_path'] ?? '',
@@ -233,48 +370,56 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
         'profile_picture' => $user_docs['profile_picture_path'] ?? '',
         'claim_photo' => $user_docs['claim_photo_path'] ?? ''
     ];
+    
+    $file_hashes = []; // Store file hashes for integrity verification
+    $uploaded_files = []; // Track successfully uploaded files for rollback if needed
 
+    // Process file uploads for required documents
     foreach (['cor_file', 'indigency_file', 'voter_file', 'profile_picture'] as $file_key) {
         if (!empty($_FILES[$file_key]['name'])) {
             $file = $_FILES[$file_key];
-            $file_name = basename($file['name']);
-            $file_type = $file['type'];
-            $file_size = $file['size'];
-            $file_tmp = $file['tmp_name'];
-
-            // Only allow images for profile_picture
-            if ($file_key === 'profile_picture') {
-                $allowed_profile_types = ['image/png', 'image/jpeg', 'image/jpg'];
-                if (!in_array($file_type, $allowed_profile_types)) {
-                    $upload_error = "Invalid file type for profile_picture. Only PNG, JPEG allowed.";
-                    break;
+            
+            // Use secure upload function
+            $upload_result = $fileSecurity->secureUpload($file, $file_key, $user_id);
+            
+            if (!$upload_result['success']) {
+                // Clean up any previously uploaded files in this transaction
+                foreach ($uploaded_files as $uploaded_file) {
+                    if (file_exists($uploaded_file)) {
+                        @unlink($uploaded_file);
+                    }
                 }
-            } else {
-                if (!in_array($file_type, $allowed_types)) {
-                    $upload_error = "Invalid file type for $file_key. Only PDF, PNG, JPEG allowed.";
-                    break;
-                }
-            }
-
-            if ($file_size > $max_size) {
-                $upload_error = "File $file_key is too large. Max size is 5MB.";
+                $upload_error = $upload_result['message'];
                 break;
             }
-
-            $file_ext = pathinfo($file_name, PATHINFO_EXTENSION);
-            $new_file_name = $file_key . '_' . $user_id . '_' . time() . '.' . $file_ext;
-            $file_path = $upload_dir . $new_file_name;
-
-            if (!move_uploaded_file($file_tmp, $file_path)) {
-                $upload_error = "Failed to upload $file_key.";
-                break;
+            
+            // Store file information
+            $old_file_path = $file_paths[$file_key];
+            $file_paths[$file_key] = $upload_result['file_path'];
+            $file_hashes[$file_key] = $upload_result['file_hash'];
+            $uploaded_files[] = $upload_result['file_path'];
+            
+            // Delete old file if it exists and is different
+            if (!empty($old_file_path) && file_exists($old_file_path) && $old_file_path !== $upload_result['file_path']) {
+                $fileSecurity->secureDelete($old_file_path);
             }
-
-            if (!empty($file_paths[$file_key]) && file_exists($file_paths[$file_key])) {
-                unlink($file_paths[$file_key]);
+            
+            // Record document submission for verification (except profile_picture)
+            if ($file_key !== 'profile_picture') {
+                $record_result = $docVerification->recordDocumentSubmission(
+                    $user_id,
+                    $file_key,
+                    $upload_result['file_path'],
+                    $upload_result['file_hash'],
+                    $upload_result['file_size'],
+                    $upload_result['mime_type']
+                );
+                
+                if (!$record_result['success']) {
+                    error_log("Failed to record document submission: " . $record_result['message']);
+                    // Continue anyway - file is uploaded, just verification tracking failed
+                }
             }
-
-            $file_paths[$file_key] = $file_path;
         } elseif (!$has_application && empty($file_paths[$file_key])) {
             $upload_error = "Missing required file: $file_key.";
             break;
@@ -284,6 +429,9 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
     if (empty($upload_error)) {
         try {
             $pdo->beginTransaction();
+            
+            // Track if we need to rollback file uploads
+            $transaction_success = false;
 
             // Update users table
             $stmt = $pdo->prepare("
@@ -298,12 +446,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 $stmt = $pdo->prepare("
                     UPDATE users_info
                     SET sex = ?, civil_status = ?, birthdate = ?, municipality = ?, barangay = ?, 
-                        place_of_birth = ?, application_status = ?
+                        place_of_birth = ?, application_status = ?, program_id = ?
                     WHERE user_id = ?
                 ");
                 $stmt->execute([
                     $sex, $civil_status, $birthdate, $municipality, $barangay, 
-                    $place_of_birth, 'Under Review', $user_id
+                    $place_of_birth, 'Under Review', $program_id, $user_id
                 ]);
 
                 // Update user_personal
@@ -340,14 +488,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 } else {
                     $stmt = $pdo->prepare("
                         INSERT INTO user_residency (
-                            user_id, permanent_address, residency_duration, registered_voter,
-                            father_voting_duration, mother_voting_duration, applicant_voting_duration,
+                            user_id, permanent_address,
                             guardian_name, relationship, guardian_address, guardian_contact
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?)
                     ");
                     $stmt->execute([
-                        $user_id, $permanent_address, $residency_duration, $registered_voter,
-                        $father_voting_duration, $mother_voting_duration, $applicant_voting_duration,
+                        $user_id, $permanent_address,
                         $guardian_name, $relationship, $guardian_address, $guardian_contact
                     ]);
                 }
@@ -420,12 +566,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 $stmt = $pdo->prepare("
                     INSERT INTO users_info (
                         user_id, municipality, barangay, sex, civil_status,
-                        birthdate, place_of_birth
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        birthdate, place_of_birth, program_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $user_id, $municipality, $barangay, $sex, $civil_status,
-                    $birthdate, $place_of_birth
+                    $birthdate, $place_of_birth, $program_id
                 ]);
 
                 // Insert into user_personal
@@ -438,14 +584,12 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
                 // Insert into user_residency
                 $stmt = $pdo->prepare("
                     INSERT INTO user_residency (
-                        user_id, permanent_address, residency_duration, registered_voter,
-                        father_voting_duration, mother_voting_duration, applicant_voting_duration,
+                        user_id, permanent_address,
                         guardian_name, relationship, guardian_address, guardian_contact
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
-                    $user_id, $permanent_address, $residency_duration, $registered_voter,
-                    $father_voting_duration, $mother_voting_duration, $applicant_voting_duration,
+                    $user_id, $permanent_address,
                     $guardian_name, $relationship, $guardian_address, $guardian_contact
                 ]);
 
@@ -482,6 +626,10 @@ if ($is_application_open && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST
             }
 
             $pdo->commit();
+            // Update session variables with the new name values
+            $_SESSION['lastname'] = $lastname;
+            $_SESSION['firstname'] = $firstname;
+            $_SESSION['middlename'] = $middlename;
             $_SESSION['application_success'] = $has_application ? "Application updated successfully!" : "Application submitted successfully!";
             header('Location: applicantdashboard.php');
             exit;
@@ -845,6 +993,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             </div>
         </div>
 
+        <!-- Document Verification Status Section -->
+        <?php if ($has_application && !empty($doc_verification_status)): ?>
+        <div class="section document-verification">
+            <h3><i class="fas fa-shield-alt"></i> Document Verification Status</h3>
+            <div class="verification-cards">
+                <?php 
+                $doc_names = [
+                    'cor_file' => 'Certificate of Registration',
+                    'indigency_file' => 'Certificate of Indigency',
+                    'voter_file' => "Voter's Certificate"
+                ];
+                $status_colors = [
+                    'Verified' => 'approved',
+                    'Pending' => 'review',
+                    'Under Review' => 'review',
+                    'Rejected' => 'denied'
+                ];
+                foreach (['cor_file', 'indigency_file', 'voter_file'] as $doc_type):
+                    $status = $doc_verification_status[$doc_type]['verification_status'] ?? 'Pending';
+                    $color_class = $status_colors[$status] ?? 'review';
+                ?>
+                <div class="stat-card">
+                    <i class="fas fa-file-check"></i>
+                    <p><?php echo htmlspecialchars($doc_names[$doc_type] ?? $doc_type); ?></p>
+                    <h3 class="<?php echo $color_class; ?>">
+                        <?php echo htmlspecialchars($status); ?>
+                    </h3>
+                    <?php if (isset($doc_verification_status[$doc_type]['verified_at'])): ?>
+                        <p style="font-size: 0.85em; color: #666; margin-top: 0.5rem;">
+                            <?php echo $status === 'Verified' ? 'Verified on: ' : 'Updated on: '; ?>
+                            <?php echo date('M d, Y', strtotime($doc_verification_status[$doc_type]['verified_at'])); ?>
+                        </p>
+                    <?php endif; ?>
+                    <?php if (isset($doc_verification_status[$doc_type]['rejection_reason']) && !empty($doc_verification_status[$doc_type]['rejection_reason'])): ?>
+                        <p style="font-size: 0.85em; color: #d32f2f; margin-top: 0.5rem;">
+                            <strong>Reason:</strong> <?php echo htmlspecialchars($doc_verification_status[$doc_type]['rejection_reason']); ?>
+                        </p>
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Claim Status Section -->
         <div class="section claim-status">
             <div class="stat-card">
@@ -935,8 +1127,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         <!-- Form Section -->
         <form id="applicationFormContent" method="POST" enctype="multipart/form-data">
+            <?php 
+            // Initialize CSRF token for form
+            require_once './utils/file_security.php';
+            initCSRFToken();
+            $csrf_token = generateCSRFToken();
+            ?>
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8'); ?>">
+            <!-- Step 0: Program Selection -->
+            <div class="form-section" id="step0" style="display: none;">
+                <h3>Select Scholarship Program</h3>
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="program_id">Scholarship Program <span class="required">*</span></label>
+                        <div class="input-group">
+                            <i class="fas fa-graduation-cap"></i>
+                            <select id="program_id" name="program_id" class="form-control" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
+                                <option value="">Select a scholarship program</option>
+                                <?php foreach ($scholarship_programs as $program): ?>
+                                    <option value="<?php echo htmlspecialchars($program['id']); ?>" 
+                                        <?php echo ($user_program_id == $program['id']) ? 'selected' : ''; ?>
+                                        <?php if (!$program['is_available']): ?>disabled<?php endif; ?>>
+                                        <?php echo htmlspecialchars($program['program_name']); ?>
+                                        <?php if (!empty($program['program_description'])): ?>
+                                            - <?php echo htmlspecialchars($program['program_description']); ?>
+                                        <?php endif; ?>
+                                        <?php if (!$program['is_available']): ?>
+                                            (<?php echo htmlspecialchars($program['availability_message']); ?>)
+                                        <?php endif; ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <p style="margin-top: 10px; color: #666; font-size: 14px;">
+                            Please select the scholarship program you wish to apply for. Each program may have different requirements.
+                        </p>
+                        <?php if ($has_application && $user_program_id): ?>
+                        <div style="margin-top: 15px; padding: 12px; background-color: #e0f2fe; border-left: 4px solid #0284c7; border-radius: 4px;">
+                            <p style="margin: 0; color: #0369a1; font-size: 14px;">
+                                <strong>Current Selection:</strong> You are currently applying for 
+                                <strong><?php 
+                                    $current_program = array_filter($scholarship_programs, function($p) use ($user_program_id) { 
+                                        return $p['id'] == $user_program_id; 
+                                    });
+                                    if (!empty($current_program)) {
+                                        echo htmlspecialchars(reset($current_program)['program_name']);
+                                    }
+                                ?></strong>
+                            </p>
+                            <p style="margin: 5px 0 0 0; color: #0369a1; font-size: 13px;">
+                                You can change your selection below if needed.
+                            </p>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <!-- Program Requirements Display -->
+                        <div id="program-requirements" class="program-requirements-container" style="display: none;">
+                            <h4 class="program-requirements-header">
+                                <i class="fas fa-list-check"></i> Program Requirements
+                            </h4>
+                            <div id="requirements-list" class="program-requirements-list">
+                                <!-- Requirements will be loaded here via JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-buttons">
+                    <button type="button" class="next-btn" onclick="nextStep(0)">Next: Personal Information</button>
+                </div>
+            </div>
+            
             <!-- Step 1: Personal Information -->
-            <div class="form-section" id="step1">
+            <div class="form-section" id="step1" style="display: none;">
                 <h3>Personal Information</h3>
                 <div class="form-row">
                     <div class="form-group">
@@ -1100,89 +1362,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="residency-duration">No. of Months/Years of Residency <span class="required">*</span></label>
-                        <div class="input-group">
-                            <i class="fas fa-clock"></i>
-                            <input type="text" id="residency-duration" name="residency_duration" class="form-control" value="<?php echo htmlspecialchars($user_residency['residency_duration'] ?? ''); ?>" required <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Are you and your parents a registered voter? <span class="required">*</span></label>
-                        <div class="radio-group">
-                            <label><input type="radio" name="registered_voter" value="yes" <?php echo (isset($user_residency['registered_voter']) && $user_residency['registered_voter'] === 'yes') ? 'checked' : ''; ?> required <?php echo !$is_application_open ? 'disabled' : ''; ?>> Yes</label>
-                            <label><input type="radio" name="registered_voter" value="no" <?php echo (isset($user_residency['registered_voter']) && $user_residency['registered_voter'] === 'no') ? 'checked' : ''; ?> <?php echo !$is_application_open ? 'disabled' : ''; ?>> No</label>
-                            <label><input type="radio" name="registered_voter" value="guardian" <?php echo (isset($user_residency['registered_voter']) && $user_residency['registered_voter'] === 'guardian') ? 'checked' : ''; ?> <?php echo !$is_application_open ? 'disabled' : ''; ?>> Parents Only</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <h4 for="residency-length">If Yes, How Long?</h4>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="father_voting_duration">Father</label>
-                        <div class="input-group">
-                            <i class="fas fa-clock"></i>
-                            <select id="father_voting_duration" name="father_voting_duration" class="form-control" style="padding-left: 2.5rem;" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                <option value="">Choose</option>
-                                <option value="1" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '1') ? 'selected' : ''; ?>>1</option>
-                                <option value="2" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '2') ? 'selected' : ''; ?>>2</option>
-                                <option value="3" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '3') ? 'selected' : ''; ?>>3</option>
-                                <option value="4" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '4') ? 'selected' : ''; ?>>4</option>
-                                <option value="5" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '5') ? 'selected' : ''; ?>>5</option>
-                                <option value="6" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '6') ? 'selected' : ''; ?>>6</option>
-                                <option value="7" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '7') ? 'selected' : ''; ?>>7</option>
-                                <option value="8" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '8') ? 'selected' : ''; ?>>8</option>
-                                <option value="9" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '9') ? 'selected' : ''; ?>>9</option>
-                                <option value="10+" <?php echo (isset($user_residency['father_voting_duration']) && $user_residency['father_voting_duration'] === '10+') ? 'selected' : ''; ?>>10+</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="mother_voting_duration">Mother</label>
-                        <div class="input-group">
-                            <i class="fas fa-clock"></i>
-                            <select id="mother_voting_duration" name="mother_voting_duration" class="form-control" style="padding-left: 2.5rem;" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                <option value="">Choose</option>
-                                <option value="1" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '1') ? 'selected' : ''; ?>>1</option>
-                                <option value="2" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '2') ? 'selected' : ''; ?>>2</option>
-                                <option value="3" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '3') ? 'selected' : ''; ?>>3</option>
-                                <option value="4" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '4') ? 'selected' : ''; ?>>4</option>
-                                <option value="5" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '5') ? 'selected' : ''; ?>>5</option>
-                                <option value="6" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '6') ? 'selected' : ''; ?>>6</option>
-                                <option value="7" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '7') ? 'selected' : ''; ?>>7</option>
-                                <option value="8" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '8') ? 'selected' : ''; ?>>8</option>
-                                <option value="9" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '9') ? 'selected' : ''; ?>>9</option>
-                                <option value="10+" <?php echo (isset($user_residency['mother_voting_duration']) && $user_residency['mother_voting_duration'] === '10+') ? 'selected' : ''; ?>>10+</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="applicant_voting_duration">Applicant</label>
-                        <div class="input-group">
-                            <i class="fas fa-clock"></i>
-                            <select id="applicant_voting_duration" name="applicant_voting_duration" class="form-control" style="padding-left: 2.5rem;" <?php echo !$is_application_open ? 'disabled' : ''; ?>>
-                                <option value="">Choose</option>
-                                <option value="1" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '1') ? 'selected' : ''; ?>>1</option>
-                                <option value="2" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '2') ? 'selected' : ''; ?>>2</option>
-                                <option value="3" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '3') ? 'selected' : ''; ?>>3</option>
-                                <option value="4" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '4') ? 'selected' : ''; ?>>4</option>
-                                <option value="5" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '5') ? 'selected' : ''; ?>>5</option>
-                                <option value="6" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '6') ? 'selected' : ''; ?>>6</option>
-                                <option value="7" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '7') ? 'selected' : ''; ?>>7</option>
-                                <option value="8" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '8') ? 'selected' : ''; ?>>8</option>
-                                <option value="9" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '9') ? 'selected' : ''; ?>>9</option>
-                                <option value="10+" <?php echo (isset($user_residency['applicant_voting_duration']) && $user_residency['applicant_voting_duration'] === '10+') ? 'selected' : ''; ?>>10+</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
                         <h4>Guardian Information</h4>
                     </div>
                 </div>
@@ -1315,7 +1494,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             </div>
                         </div>
                     </div>
-                    <div class="family-member">
+                    <div class="family-member" style="width: 100%; margin-top: 1.5rem;">
                         <h4>Mother</h4>
                         <div class="form-row">
                             <div class="form-group">
@@ -1419,6 +1598,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <i class="fas fa-upload"></i> Choose File
                             </label>
                             <span class="file-name"><?php echo !empty($user_docs['cor_file_path']) ? basename($user_docs['cor_file_path']) : 'No file chosen'; ?></span>
+                            <?php if (!empty($user_docs['cor_file_path']) && isset($doc_verification_status['cor_file'])): 
+                                $cor_status = $doc_verification_status['cor_file']['verification_status'] ?? 'Pending';
+                                $status_class = strtolower(str_replace(' ', '-', $cor_status));
+                            ?>
+                                <span class="verification-badge-applicant <?php echo $status_class; ?>" style="margin-left: 0.5rem;">
+                                    <?php echo htmlspecialchars($cor_status); ?>
+                                </span>
+                            <?php endif; ?>
                         </div>
                         <?php if (isset($_SESSION['application_error']) && strpos($_SESSION['application_error'], 'cor_file') !== false): ?>
                             <div class="file-error"><?php echo $_SESSION['application_error']; ?></div>
@@ -1449,6 +1636,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <i class="fas fa-upload"></i> Choose File
                             </label>
                             <span class="file-name"><?php echo !empty($user_docs['voter_file_path']) ? basename($user_docs['voter_file_path']) : 'No file chosen'; ?></span>
+                            <?php if (!empty($user_docs['voter_file_path']) && isset($doc_verification_status['voter_file'])): 
+                                $voter_status = $doc_verification_status['voter_file']['verification_status'] ?? 'Pending';
+                                $status_class = strtolower(str_replace(' ', '-', $voter_status));
+                            ?>
+                                <span class="verification-badge-applicant <?php echo $status_class; ?>" style="margin-left: 0.5rem;">
+                                    <?php echo htmlspecialchars($voter_status); ?>
+                                </span>
+                            <?php endif; ?>
                         </div>
                         <?php if (isset($_SESSION['application_error']) && strpos($_SESSION['application_error'], 'voter_file') !== false): ?>
                             <div class="file-error"><?php echo $_SESSION['application_error']; ?></div>
@@ -1504,11 +1699,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <div class="form-group full-width">
                         <h4>Residency</h4>
                         <p><strong>Permanent Address:</strong> <span id="review_permanent_address"><?php echo htmlspecialchars($user_residency['permanent_address'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Residency Duration:</strong> <span id="review_residency_duration"><?php echo htmlspecialchars($user_residency['residency_duration'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Registered Voter:</strong> <span id="review_registered_voter"><?php echo htmlspecialchars($user_residency['registered_voter'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Father Voting Duration:</strong> <span id="review_father_voting_duration"><?php echo htmlspecialchars($user_residency['father_voting_duration'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Mother Voting Duration:</strong> <span id="review_mother_voting_duration"><?php echo htmlspecialchars($user_residency['mother_voting_duration'] ?? 'Not provided'); ?></span></p>
-                        <p><strong>Applicant Voting Duration:</strong> <span id="review_applicant_voting_duration"><?php echo htmlspecialchars($user_residency['applicant_voting_duration'] ?? 'Not provided'); ?></span></p>
                         <h5>Guardian Information</h5>
                         <p><strong>Name:</strong> <span id="review_guardian_name"><?php echo htmlspecialchars($user_residency['guardian_name'] ?? 'Not provided'); ?></span></p>
                         <p><strong>Relationship:</strong> <span id="review_relationship"><?php echo htmlspecialchars($user_residency['relationship'] ?? 'Not provided'); ?></span></p>
@@ -1608,7 +1798,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 </div>
 
 <script>
-    let currentStep = 1;
+    let currentStep = 0;
 
     function showStep(step) {
         document.querySelectorAll('.form-section').forEach(section => {
@@ -1616,9 +1806,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         });
         document.getElementById(`step${step}`).style.display = 'block';
 
-        document.querySelectorAll('.progress-step').forEach((stepElement, index) => {
-            stepElement.classList.toggle('active', index + 1 <= step);
-        });
+        // Update progress bar (step 0 is before the progress bar, steps 1-5 are shown)
+        if (step > 0) {
+            document.querySelectorAll('.progress-step').forEach((stepElement, index) => {
+                stepElement.classList.toggle('active', index + 1 <= step);
+            });
+        }
 
         if (step === 5) {
             updateReviewSection();
@@ -1626,15 +1819,160 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         currentStep = step;
     }
+    
+    // Load program requirements when program is selected
+    // Note: showStep(0) will be called by showApplicationForm() when the form is displayed
+    const programSelect = document.getElementById('program_id');
+    const requirementsDiv = document.getElementById('program-requirements');
+    const requirementsList = document.getElementById('requirements-list');
+    
+    // Fetch and display requirements for selected program
+    function loadProgramRequirements(programId) {
+        if (!programId) {
+            if (requirementsDiv) requirementsDiv.style.display = 'none';
+            return;
+        }
+        
+        // Fetch requirements via AJAX
+        fetch('ajax_get_program_requirements.php?program_id=' + programId)
+            .then(response => response.json())
+            .then(data => {
+                if (!requirementsDiv || !requirementsList) return;
+                
+                if (data.success && data.requirements && data.requirements.length > 0) {
+                    // Deduplicate requirements by name to prevent any duplicates
+                    const uniqueReqs = [];
+                    const seenNames = new Set();
+                    
+                    data.requirements.forEach(req => {
+                        const name = req.requirement_name.toLowerCase().trim();
+                        if (!seenNames.has(name)) {
+                            seenNames.add(name);
+                            uniqueReqs.push(req);
+                        }
+                    });
+                    
+                    let html = '<ul class="requirements-ul">';
+                    uniqueReqs.forEach(req => {
+                        html += '<li class="requirement-item">';
+                        html += '<i class="fas fa-file-alt requirement-icon"></i>';
+                        html += '<div class="requirement-content">';
+                        html += '<strong class="requirement-name">' + escapeHtml(req.requirement_name) + '</strong>';
+                        if (req.requirement_description) {
+                            html += '<span class="requirement-desc">: ' + escapeHtml(req.requirement_description) + '</span>';
+                        }
+                        html += '</div>';
+                        html += '</li>';
+                    });
+                    html += '</ul>';
+                    requirementsList.innerHTML = html;
+                    requirementsDiv.style.display = 'block';
+                } else {
+                    // Default requirements if none found
+                    requirementsList.innerHTML = '<p class="requirements-default">Standard requirements apply: Certificate of Registration, Certificate of Indigency, and Voter\'s Certificate.</p>';
+                    requirementsDiv.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading requirements:', error);
+                if (!requirementsDiv || !requirementsList) return;
+                // Show default requirements on error
+                requirementsList.innerHTML = '<p class="requirements-default">Standard requirements apply: Certificate of Registration, Certificate of Indigency, and Voter\'s Certificate.</p>';
+                requirementsDiv.style.display = 'block';
+            });
+    
+    // Helper function to escape HTML
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    }
+    
+    // Load requirements when program selection changes
+    if (programSelect) {
+        programSelect.addEventListener('change', function() {
+            // Remove any existing availability message
+            const existingMsg = document.getElementById('program-availability-message');
+            if (existingMsg) {
+                existingMsg.remove();
+            }
+            
+            // Get selected option
+            const selectedOption = this.options[this.selectedIndex];
+            
+            // Check if the selected program is disabled (unavailable)
+            if (selectedOption.disabled) {
+                // Extract the availability message from the option text
+                const optionText = selectedOption.textContent;
+                const match = optionText.match(/\(([^)]+)\)/);
+                if (match) {
+                    // Create and show availability message
+                    const messageDiv = document.createElement('div');
+                    messageDiv.id = 'program-availability-message';
+                    messageDiv.className = 'alert alert-warning';
+                    messageDiv.innerHTML = `
+                        <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 12px; border-radius: 4px; margin-top: 10px;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>Program Unavailable:</strong> ${match[1]}
+                        </div>
+                    `;
+                    this.parentNode.parentNode.appendChild(messageDiv);
+                }
+            }
+            
+            loadProgramRequirements(this.value);
+        });
+        
+        // Load requirements for initially selected program
+        if (programSelect.value) {
+            loadProgramRequirements(programSelect.value);
+        }
+    }
 
     function nextStep(current) {
+        // Validate program selection before proceeding from step 0
+        if (current === 0) {
+            const programSelect = document.getElementById('program_id');
+            if (!programSelect.value) {
+                showProgramSelectionModal();
+                return;
+            }
+        }
         if (current < 5) {
             showStep(current + 1);
         }
     }
+    
+    // Custom styled modal for program selection alert
+    function showProgramSelectionModal() {
+        const modal = document.getElementById('programSelectionModal');
+        if (modal) {
+            modal.style.display = 'flex';
+            // Focus the OK button for accessibility
+            const btn = modal.querySelector('.custom-modal-btn');
+            if (btn) {
+                setTimeout(() => btn.focus(), 100);
+            }
+        }
+    }
+    
+    function closeProgramSelectionModal() {
+        const modal = document.getElementById('programSelectionModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+    
+    // Close modal on Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeProgramSelectionModal();
+        }
+    });
 
     function prevStep(current) {
-        if (current > 1) {
+        if (current > 0) {
             showStep(current - 1);
         }
     }
@@ -1657,12 +1995,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // Residency
         document.getElementById('review_permanent_address').textContent = document.getElementById('permanent-address').value || 'Not provided';
-        document.getElementById('review_residency_duration').textContent = document.getElementById('residency-duration').value || 'Not provided';
-        const registeredVoter = document.querySelector('input[name="registered_voter"]:checked');
-        document.getElementById('review_registered_voter').textContent = registeredVoter ? registeredVoter.value : 'Not provided';
-        document.getElementById('review_father_voting_duration').textContent = document.getElementById('father_voting_duration').value || 'Not provided';
-        document.getElementById('review_mother_voting_duration').textContent = document.getElementById('mother_voting_duration').value || 'Not provided';
-        document.getElementById('review_applicant_voting_duration').textContent = document.getElementById('applicant_voting_duration').value || 'Not provided';
         document.getElementById('review_guardian_name').textContent = document.getElementById('guardian_name').value || 'Not provided';
         document.getElementById('review_relationship').textContent = document.getElementById('relationship').value || 'Not provided';
         document.getElementById('review_guardian_address').textContent = document.getElementById('guardian_address').value || 'Not provided';
@@ -1714,7 +2046,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         document.getElementById('applyLink').classList.add('active');
         document.getElementById('dashboardLink').classList.remove('active');
         document.getElementById('faqsLink').classList.remove('active');
-        showStep(1);
+        // Always start with Step 0 (Program Selection) so users can choose their scholarship program
+        showStep(0);
     }
 
     function showFAQs() {
@@ -1747,12 +2080,167 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         });
     }
 
+    // Document validation system
+    let currentProgramId = null;
+    let documentValidationResults = {};
+    
+    // Get program ID when program is selected (reuse existing programSelect if available)
+    const programSelectForValidation = document.getElementById('program_id');
+    if (programSelectForValidation) {
+        programSelectForValidation.addEventListener('change', function() {
+            currentProgramId = this.value;
+            // Clear previous validation results when program changes
+            documentValidationResults = {};
+            clearDocumentValidationMessages();
+        });
+        currentProgramId = programSelectForValidation.value;
+    }
+    
+    // Enhanced file upload with validation
     document.querySelectorAll('.file-upload-group input[type="file"]').forEach(input => {
         input.addEventListener('change', function() {
             const fileName = this.files.length > 0 ? this.files[0].name : 'No file chosen';
-            this.nextElementSibling.nextElementSibling.textContent = fileName;
+            const fileNameSpan = this.nextElementSibling.nextElementSibling;
+            if (fileNameSpan) {
+                fileNameSpan.textContent = fileName;
+            }
+            
+            // Validate document if it's a required document (not profile picture)
+            if (this.files.length > 0 && this.id !== 'profile_picture') {
+                validateDocumentFile(this);
+            } else {
+                // Clear validation message if file is removed
+                clearValidationMessage(this.id);
+            }
         });
     });
+    
+    /**
+     * Validate document file against scholarship academic year
+     */
+    async function validateDocumentFile(fileInput) {
+        const file = fileInput.files[0];
+        if (!file) return;
+        
+        const documentType = fileInput.id.replace('_file', '');
+        const fileKey = fileInput.id;
+        
+        // Show loading state
+        showValidationLoading(fileKey);
+        
+        try {
+            // Read file as data URL for potential OCR (if needed in future)
+            // For now, we'll validate after OCR is done by admin
+            // But we can show a warning about date requirements
+            
+            // Get program academic year info
+            if (currentProgramId) {
+                const response = await fetch(`ajax_document_validation.php?action=get_program_academic_year&program_id=${currentProgramId}`);
+                const data = await response.json();
+                
+                if (data.success && data.program) {
+                    const program = data.program;
+                    if (program.academic_year) {
+                        showValidationInfo(fileKey, `Please ensure this document is from academic year ${program.academic_year}. The document date will be verified during review.`);
+                    } else {
+                        showValidationInfo(fileKey, 'Document uploaded. Date validation will be performed during admin review.');
+                    }
+                } else {
+                    showValidationInfo(fileKey, 'Document uploaded. Date validation will be performed during admin review.');
+                }
+            } else {
+                showValidationWarning(fileKey, 'Please select a scholarship program first to enable date validation.');
+            }
+            
+        } catch (error) {
+            console.error('Validation error:', error);
+            showValidationInfo(fileKey, 'Document uploaded. Date validation will be performed during admin review.');
+        }
+    }
+    
+    /**
+     * Show validation loading state
+     */
+    function showValidationLoading(fileKey) {
+        const validationDiv = getOrCreateValidationDiv(fileKey);
+        validationDiv.className = 'document-validation-message validation-loading';
+        validationDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validating document...';
+    }
+    
+    /**
+     * Show validation info message
+     */
+    function showValidationInfo(fileKey, message) {
+        const validationDiv = getOrCreateValidationDiv(fileKey);
+        validationDiv.className = 'document-validation-message validation-info';
+        validationDiv.innerHTML = '<i class="fas fa-info-circle"></i> ' + escapeHtml(message);
+        documentValidationResults[fileKey] = { valid: true, message: message, type: 'info' };
+    }
+    
+    /**
+     * Show validation warning message
+     */
+    function showValidationWarning(fileKey, message) {
+        const validationDiv = getOrCreateValidationDiv(fileKey);
+        validationDiv.className = 'document-validation-message validation-warning';
+        validationDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + escapeHtml(message);
+        documentValidationResults[fileKey] = { valid: false, message: message, type: 'warning' };
+    }
+    
+    /**
+     * Show validation error message
+     */
+    function showValidationError(fileKey, message) {
+        const validationDiv = getOrCreateValidationDiv(fileKey);
+        validationDiv.className = 'document-validation-message validation-error';
+        validationDiv.innerHTML = '<i class="fas fa-times-circle"></i> ' + escapeHtml(message);
+        documentValidationResults[fileKey] = { valid: false, message: message, type: 'error' };
+    }
+    
+    /**
+     * Clear validation message
+     */
+    function clearValidationMessage(fileKey) {
+        const validationDiv = document.getElementById('validation-' + fileKey);
+        if (validationDiv) {
+            validationDiv.remove();
+        }
+        delete documentValidationResults[fileKey];
+    }
+    
+    /**
+     * Clear all validation messages
+     */
+    function clearDocumentValidationMessages() {
+        document.querySelectorAll('.document-validation-message').forEach(div => {
+            div.remove();
+        });
+        documentValidationResults = {};
+    }
+    
+    /**
+     * Get or create validation message div
+     */
+    function getOrCreateValidationDiv(fileKey) {
+        let validationDiv = document.getElementById('validation-' + fileKey);
+        if (!validationDiv) {
+            validationDiv = document.createElement('div');
+            validationDiv.id = 'validation-' + fileKey;
+            validationDiv.className = 'document-validation-message';
+            
+            // Find the file input and insert after its parent container
+            const fileInput = document.getElementById(fileKey);
+            if (fileInput) {
+                const fileUploadGroup = fileInput.closest('.file-upload-group');
+                if (fileUploadGroup) {
+                    fileUploadGroup.parentNode.insertBefore(validationDiv, fileUploadGroup.nextSibling);
+                } else {
+                    fileInput.parentNode.appendChild(validationDiv);
+                }
+            }
+        }
+        return validationDiv;
+    }
 
     document.querySelector('.profile-pic').addEventListener('click', function() {
         if (!<?php echo json_encode(!$is_application_open); ?>) {
@@ -1796,12 +2284,190 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 </script>
 <style>
-.faqs-content { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.07); padding: 2rem; margin-top: 2rem; }
+/* Document Validation Styles */
+.document-validation-message {
+    margin-top: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    animation: slideIn 0.3s ease-out;
+}
+
+.document-validation-message i {
+    font-size: 1rem;
+}
+
+.validation-loading {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    color: var(--primary-color);
+}
+
+.validation-info {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #60a5fa;
+}
+
+.validation-warning {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+}
+
+.validation-error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Verification Badge Styles for Applicant Dashboard */
+.verification-badge-applicant {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.verification-badge-applicant.verified {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.verification-badge-applicant.rejected {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.verification-badge-applicant.under-review {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.verification-badge-applicant.pending {
+    background: rgba(156, 163, 175, 0.15);
+    color: #9ca3af;
+    border: 1px solid rgba(156, 163, 175, 0.3);
+}
+
+/* Family Background Layout - Vertical Stack */
+.family-background {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 2rem;
+    width: 100%;
+}
+
+.family-member {
+    width: 100% !important;
+    background: var(--bg-gradient-card);
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-md);
+    margin-bottom: 0;
+}
+
+.family-member h4 {
+    margin-bottom: 1.5rem;
+    color: var(--text-bright);
+    font-size: 1.2rem;
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 0.5rem;
+}
+
+.faqs-content { 
+    background: var(--bg-gradient-card); 
+    backdrop-filter: blur(10px);
+    border-radius: 24px; 
+    box-shadow: var(--shadow-md); 
+    padding: 2rem; 
+    margin-top: 2rem; 
+    border: 1px solid var(--border-color);
+}
+.faqs-content .header h1 {
+    background: var(--bg-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 1.5rem;
+}
+.faqs-content h4 {
+    color: var(--text-color);
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
 .faqs-list { max-width: 700px; margin: 0 auto; }
 .faq-item { margin-bottom: 1.5rem; }
-.faq-question { width: 100%; text-align: left; background: #f1f1f1; border: none; outline: none; padding: 1rem; font-size: 1.1rem; font-weight: 500; border-radius: 8px; cursor: pointer; transition: background 0.2s; }
-.faq-question.open, .faq-question:hover { background: #e0e7ff; }
-.faq-answer { display: none; padding: 1rem; background: #f9fafb; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb; margin-top: -8px; font-size: 1rem; }
+.faq-question { 
+    width: 100%; 
+    text-align: left; 
+    background: rgba(15, 23, 42, 0.6); 
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+    outline: none; 
+    padding: 1rem; 
+    font-size: 1.1rem; 
+    font-weight: 500; 
+    border-radius: 12px; 
+    cursor: pointer; 
+    transition: all 0.3s ease;
+    color: var(--text-bright);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.faq-question::after {
+    content: '▼';
+    font-size: 0.8rem;
+    transition: transform 0.3s ease;
+    color: var(--primary-color);
+}
+.faq-question.open::after {
+    transform: rotate(180deg);
+}
+.faq-question.open, .faq-question:hover { 
+    background: rgba(49, 46, 129, 0.8); 
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+.faq-answer { 
+    display: none; 
+    padding: 1rem; 
+    background: rgba(15, 23, 42, 0.4); 
+    backdrop-filter: blur(10px);
+    border-radius: 0 0 12px 12px; 
+    border: 1px solid var(--border-color);
+    border-top: none;
+    margin-top: -8px; 
+    font-size: 1rem;
+    color: var(--text-color);
+    line-height: 1.6;
+}
+.faq-answer.show {
+    display: block;
+}
 .stat-card {
     transition: transform 0.2s ease;
 }
@@ -1981,68 +2647,43 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Add N/A option to voting duration dropdowns
-    const votingDurationDropdowns = ['father_voting_duration', 'mother_voting_duration', 'applicant_voting_duration'];
-    votingDurationDropdowns.forEach(id => {
-        const select = document.getElementById(id);
-        if (select) {
-            const naOption = document.createElement('option');
-            naOption.value = 'N/A';
-            naOption.textContent = 'N/A';
-            select.appendChild(naOption);
-        }
-    });
+});
 
-    // Handle registered voter radio button selection
-    const registeredVoterRadios = document.querySelectorAll('input[name="registered_voter"]');
-    registeredVoterRadios.forEach(radio => {
-        radio.addEventListener('change', function() {
-            const votingDurationDropdowns = [
-                document.getElementById('father_voting_duration'),
-                document.getElementById('mother_voting_duration'),
-                document.getElementById('applicant_voting_duration')
-            ];
-
-            if (this.value === 'no') {
-                // If "No" is selected, disable dropdowns and set to N/A
-                votingDurationDropdowns.forEach(dropdown => {
-                    if (dropdown) {
-                        dropdown.disabled = true;
-                        dropdown.value = 'N/A';
-                    }
+   if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(function(registration) {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, function(err) {
+                    console.log('ServiceWorker registration failed: ', err);
                 });
-            } else {
-                // If "Yes" or "Guardian Only" is selected, enable dropdowns
-                votingDurationDropdowns.forEach(dropdown => {
-                    if (dropdown) {
-                        dropdown.disabled = false;
-                        // Reset to empty selection if it was N/A
-                        if (dropdown.value === 'N/A') {
-                            dropdown.value = '';
-                        }
-                    }
-                });
-            }
-        });
-    });
-
-    // Initial state check
-    const selectedVoterOption = document.querySelector('input[name="registered_voter"]:checked');
-    if (selectedVoterOption && selectedVoterOption.value === 'no') {
-        const votingDurationDropdowns = [
-            document.getElementById('father_voting_duration'),
-            document.getElementById('mother_voting_duration'),
-            document.getElementById('applicant_voting_duration')
-        ];
-        votingDurationDropdowns.forEach(dropdown => {
-            if (dropdown) {
-                dropdown.disabled = true;
-                dropdown.value = 'N/A';
-            }
         });
     }
-});
 </script>
+
+<?php include 'chatbot.php'; ?>
+
+<!-- Custom Styled Modal for Program Selection Alert -->
+<div id="programSelectionModal" class="custom-modal" style="display: none;">
+    <div class="custom-modal-overlay" onclick="closeProgramSelectionModal()"></div>
+    <div class="custom-modal-content">
+        <div class="custom-modal-header">
+            <div class="custom-modal-icon">
+                <i class="fas fa-graduation-cap"></i>
+            </div>
+            <h3>Program Selection Required</h3>
+        </div>
+        <div class="custom-modal-body">
+            <p>Please select a scholarship program before proceeding to the next step.</p>
+            <p>Choose between <strong>EduKalinga</strong> or <strong>Handog Edukasyon</strong> to continue with your application.</p>
+        </div>
+        <div class="custom-modal-footer">
+            <button class="custom-modal-btn" onclick="closeProgramSelectionModal()">
+                <i class="fas fa-check"></i> OK, I Understand
+            </button>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>

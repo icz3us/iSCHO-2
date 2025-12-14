@@ -6,6 +6,7 @@ use PHPMailer\PHPMailer\Exception;
 
 require 'vendor/autoload.php'; 
 require_once __DIR__ . '/vendor/phpqrcode/qrlib.php';
+require_once __DIR__ . '/utils/document_verification.php';
 
 if ($_SESSION['user_role'] !== 'Admin') {
     header('Location: login.php');
@@ -62,6 +63,8 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_photo') {
         if (isset($_POST['image_data'])) {
+            error_log("Starting claim photo process for user_id: " . $user_id);
+            
             $image_data = $_POST['image_data'];
             $image_data = str_replace('data:image/png;base64,', '', $image_data);
             $image_data = str_replace(' ', '+', $image_data);
@@ -72,10 +75,41 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
                 mkdir('claim_photos', 0777, true);
             }
             file_put_contents($file_name, $data);
+            error_log("Saved claim photo to: " . $file_name);
 
             try {
-                $stmt = $pdo->prepare("INSERT INTO user_docs (user_id, claim_photo_path) VALUES (?, ?) ON DUPLICATE KEY UPDATE claim_photo_path = ?");
-                $stmt->execute([$user_id, $file_name, $file_name]);
+                // Start transaction
+                $pdo->beginTransaction();
+                error_log("Started database transaction");
+
+                // First check if user_docs record exists
+                $stmt = $pdo->prepare("SELECT * FROM user_docs WHERE user_id = ?");
+                $stmt->execute([$user_id]);
+                $existing_docs = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                if ($existing_docs) {
+                    // Update existing record
+                    $stmt = $pdo->prepare("UPDATE user_docs SET claim_photo_path = ? WHERE user_id = ?");
+                    $stmt->execute([$file_name, $user_id]);
+                    error_log("Updated existing user_docs record");
+                } else {
+                    // Insert new record with empty paths for required documents
+                    $stmt = $pdo->prepare("INSERT INTO user_docs (user_id, claim_photo_path, cor_file_path, indigency_file_path, voter_file_path, profile_picture_path) VALUES (?, ?, '', '', '', '')");
+                    $stmt->execute([$user_id, $file_name]);
+                    error_log("Inserted new user_docs record");
+                }
+
+                // Update the claim_status in users_info to 'Claimed'
+                $stmt = $pdo->prepare("UPDATE users_info SET claim_status = 'Claimed', claimed_at = NOW() WHERE user_id = ?");
+                $result = $stmt->execute([$user_id]);
+                $rowsAffected = $stmt->rowCount();
+                error_log("Updated users_info table. Rows affected: " . $rowsAffected);
+
+                // Mark the token as used in claim_tokens
+                $stmt = $pdo->prepare("UPDATE claim_tokens SET used = 1, used_at = NOW() WHERE user_id = ? AND used = 0 ORDER BY created_at DESC LIMIT 1");
+                $result = $stmt->execute([$user_id]);
+                $rowsAffected = $stmt->rowCount();
+                error_log("Updated claim_tokens table. Rows affected: " . $rowsAffected);
 
                 // Fetch applicant details for email
                 $stmt = $pdo->prepare("
@@ -87,16 +121,9 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
                 $applicant = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($applicant) {
+                    error_log("Found applicant: " . json_encode($applicant));
                     $applicant_name = $applicant['firstname'] . ' ' . $applicant['lastname'];
                     $email = $applicant['email'];
-
-                    // Update the claim_status in users_info to 'Claimed' without resetting application_status
-                    $stmt = $pdo->prepare("UPDATE users_info SET claim_status = 'Claimed' WHERE user_id = ?");
-                    $stmt->execute([$user_id]);
-
-                    // Mark the token as used in claim_tokens
-                    $stmt = $pdo->prepare("UPDATE claim_tokens SET used = 1, used_at = NOW() WHERE user_id = ? AND used = 0 LIMIT 1");
-                    $stmt->execute([$user_id]);
 
                     // Send email to applicant confirming the claim
                     $mail = new PHPMailer(true);
@@ -112,9 +139,10 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
                         $mail->setFrom('ischobsit@gmail.com', 'Scholarship Admin');
                         $mail->addAddress($email, $applicant_name);
 
-                        // Attach the claim photo directly using the saved file path
+                        // Attach the claim photo
                         if (file_exists($file_name)) {
                             $mail->addAttachment($file_name, 'claim_photo.png');
+                            error_log("Attached claim photo to email");
                         }
 
                         $mail->isHTML(true);
@@ -139,14 +167,30 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
                         $mail->AltBody = "Dear $applicant_name,\n\nYour scholarship has been successfully claimed on " . date('Y-m-d H:i:s') . ".\nPlease find your claim photo attached to this email for your records.\n\nThank you for completing the claim process. If you have any questions, please contact us at ischobsit@gmail.com.\n\nBest regards,\niSCHO Admin Team";
 
                         $mail->send();
+                        error_log("Email sent successfully");
+                        
+                        // Commit the transaction only after email is sent successfully
+                        $pdo->commit();
+                        error_log("Transaction committed successfully");
                         $_SESSION['photo_success'] = "Photo uploaded successfully! Claim process completed.";
                     } catch (Exception $e) {
-                        $_SESSION['photo_error'] = "Photo saved successfully! Failed to send email: {$mail->ErrorInfo}";
+                        error_log("Email error: " . $e->getMessage());
+                        $pdo->rollBack();
+                        error_log("Transaction rolled back due to email error");
+                        $_SESSION['photo_error'] = "Failed to send email: {$mail->ErrorInfo}";
                     }
                 } else {
+                    error_log("Applicant not found for user_id: " . $user_id);
+                    $pdo->rollBack();
+                    error_log("Transaction rolled back - applicant not found");
                     $_SESSION['photo_error'] = "Applicant not found.";
                 }
             } catch (PDOException $e) {
+                error_log("Database error: " . $e->getMessage());
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                    error_log("Transaction rolled back due to database error");
+                }
                 $_SESSION['photo_error'] = "Error saving photo: " . $e->getMessage();
             }
 
@@ -161,15 +205,18 @@ if (isset($_GET['view']) && $_GET['view'] === 'claim_photo' && isset($_GET['user
 $claimed_applicants = [];
 if (isset($_GET['view']) && $_GET['view'] === 'claiming_data') {
     try {
-        $stmt = $pdo->prepare("
-            SELECT DISTINCT u.id, u.firstname, u.lastname, u.middlename, u.email, ui.claim_status, ud.claim_photo_path
-            FROM users u
-            LEFT JOIN users_info ui ON u.id = ui.user_id
-            LEFT JOIN user_docs ud ON u.id = ud.user_id
-            WHERE ui.claim_status = 'Claimed' AND ud.claim_photo_path IS NOT NULL
-        ");
-        $stmt->execute();
-        $claimed_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $admin_program_id = $_SESSION['program_id'] ?? null;
+        if ($admin_program_id) {
+            $stmt = $pdo->prepare("
+                SELECT DISTINCT u.id, u.firstname, u.lastname, u.middlename, u.email, ui.claim_status, ud.claim_photo_path
+                FROM users u
+                LEFT JOIN users_info ui ON u.id = ui.user_id
+                LEFT JOIN user_docs ud ON u.id = ud.user_id
+                WHERE ui.claim_status = 'Claimed' AND ud.claim_photo_path IS NOT NULL AND ui.program_id = ?
+            ");
+            $stmt->execute([$admin_program_id]);
+            $claimed_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
     } catch (PDOException $e) {
         $_SESSION['claiming_data_error'] = "Error fetching claimed applicants: " . $e->getMessage();
     }
@@ -206,31 +253,68 @@ if ($firstname && $lastname) {
     $initials = 'AD'; 
 }
 
+// Get admin's program_id
+$admin_program_id = $_SESSION['program_id'] ?? null;
+
+// Get program name for the report
+$program_name = 'All Programs';
+if ($admin_program_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT program_name FROM scholarship_programs WHERE id = ?");
+        $stmt->execute([$admin_program_id]);
+        $program_result = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($program_result) {
+            $program_name = $program_result['program_name'];
+        }
+    } catch (PDOException $e) {
+        error_log("Error fetching program name: " . $e->getMessage());
+    }
+}
+
 $total_applicants = 0;
 $approved_applicants = 0;
 $denied_applicants = 0;
 $under_review_applicants = 0;
 
 try {
-    // Count total applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'Applicant'");
-    $stmt->execute();
-    $total_applicants = $stmt->fetchColumn();
+    // Count total applicants for this admin's program
+    if ($admin_program_id) {
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM users u
+            INNER JOIN users_info ui ON u.id = ui.user_id
+            WHERE u.role = 'Applicant' AND ui.program_id = ?
+        ");
+        $stmt->execute([$admin_program_id]);
+        $total_applicants = $stmt->fetchColumn();
 
-    // Count approved applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Approved'");
-    $stmt->execute();
-    $approved_applicants = $stmt->fetchColumn();
+        // Count approved applicants
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM users_info 
+            WHERE application_status = 'Approved' AND program_id = ?
+        ");
+        $stmt->execute([$admin_program_id]);
+        $approved_applicants = $stmt->fetchColumn();
 
-    // Count denied applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Denied'");
-    $stmt->execute();
-    $denied_applicants = $stmt->fetchColumn();
+        // Count denied applicants
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM users_info 
+            WHERE application_status = 'Denied' AND program_id = ?
+        ");
+        $stmt->execute([$admin_program_id]);
+        $denied_applicants = $stmt->fetchColumn();
 
-    // Count under review applicants
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users_info WHERE application_status = 'Under Review'");
-    $stmt->execute();
-    $under_review_applicants = $stmt->fetchColumn();
+        // Count under review applicants
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM users_info 
+            WHERE application_status = 'Under Review' AND program_id = ?
+        ");
+        $stmt->execute([$admin_program_id]);
+        $under_review_applicants = $stmt->fetchColumn();
+    }
 
 } catch (PDOException $e) {
     error_log("Error: " . $e->getMessage());
@@ -241,15 +325,19 @@ $female_count = 0;
 $other_count = 0;
 
 try {
-    $stmt = $pdo->prepare("
-        SELECT sex, COUNT(*) as count 
-        FROM users_info ui
-        JOIN users u ON ui.user_id = u.id
-        WHERE u.role = 'Applicant'
-        GROUP BY sex
-    ");
-    $stmt->execute();
-    $gender_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if ($admin_program_id) {
+        $stmt = $pdo->prepare("
+            SELECT sex, COUNT(*) as count 
+            FROM users_info ui
+            JOIN users u ON ui.user_id = u.id
+            WHERE u.role = 'Applicant' AND ui.program_id = ?
+            GROUP BY sex
+        ");
+        $stmt->execute([$admin_program_id]);
+        $gender_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $gender_data = [];
+    }
 
     foreach ($gender_data as $row) {
         $sex = strtolower($row['sex'] ?? '');
@@ -322,6 +410,13 @@ try {
     ";
 
     $params = [];
+    
+    // Filter by admin's program_id
+    if ($admin_program_id) {
+        $query .= " AND ui.program_id = ?";
+        $params[] = $admin_program_id;
+    }
+    
     if (!empty($search_query)) {
         $query .= "
             AND (
@@ -331,12 +426,15 @@ try {
             )
         ";
         $search_term = "%$search_query%";
-        $params = [$search_term, $search_term, $search_term];
+        $params = array_merge($params, [$search_term, $search_term, $search_term]);
     }
 
     $stmt = $pdo->prepare($query);
     $stmt->execute($params);
     $all_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Initialize DocumentVerification once for all applicants
+    $docVerification = new DocumentVerification($pdo);
 
     foreach ($all_applicants as &$applicant) {
         $stmt = $pdo->prepare("
@@ -358,6 +456,14 @@ try {
             'voter' => $doc['voter_file_path'] ?? null,
             'profile_picture' => $doc['profile_picture_path'] ?? null,
             'claim_photo' => $doc['claim_photo_path'] ?? null,
+        ];
+
+        // Fetch document verification status
+        $verification_statuses = $docVerification->getUserDocumentStatus($applicant['id']);
+        $applicant['verification_status'] = [
+            'cor_file' => $verification_statuses['cor_file'] ?? null,
+            'indigency_file' => $verification_statuses['indigency_file'] ?? null,
+            'voter_file' => $verification_statuses['voter_file'] ?? null,
         ];
 
         $stmt = $pdo->prepare("
@@ -434,7 +540,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['approve']) || isset($
 
             // Required fields from user_residency
             $required_user_residency = [
-                'permanent_address', 'residency_duration', 'registered_voter',
+                'permanent_address',
                 'guardian_name', 'relationship', 'guardian_address', 'guardian_contact'
             ];
 
@@ -550,7 +656,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && (isset($_POST['approve']) || isset($
                         $stmt->execute([$applicant_id, $token]);
 
                         // Generate QR code using phpqrcode
-                        $qrCodeUrl = "  https://32bf-2001-fd8-b812-d700-9d24-2fe6-269-a01b.ngrok-free.app/ischo2/verify_claim.php?token=" . urlencode($token);
+                        $qrCodeUrl = "https://ischo-main.site/verify_claim.php?token=" . urlencode($token);
                         $qrCodePath = 'qrcodes/' . $token . '.png';
                         if (!is_dir('qrcodes')) {
                             mkdir('qrcodes', 0777, true);
@@ -732,49 +838,100 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_deadline') {
 
 $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
 
-// Fetch municipality statistics
+// Fetch municipality statistics (filtered by admin's program)
 $municipality_stats = [];
-try {
-    $stmt = $pdo->prepare("
-        SELECT ui.municipality, COUNT(*) as total_count,
-            SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
-            SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
-        FROM users_info ui 
-        JOIN users u ON ui.user_id = u.id
-        WHERE ui.municipality IS NOT NULL 
-            AND ui.municipality != ''
-            AND u.role = 'Applicant'
-        GROUP BY ui.municipality 
-        ORDER BY ui.municipality ASC
-    ");
-    $stmt->execute();
-    $municipality_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    error_log("Error fetching municipality statistics: " . $e->getMessage());
+if ($admin_program_id) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT ui.municipality, COUNT(*) as total_count,
+                SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
+                SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
+            FROM users_info ui 
+            JOIN users u ON ui.user_id = u.id
+            WHERE ui.municipality IS NOT NULL 
+                AND ui.municipality != ''
+                AND u.role = 'Applicant'
+                AND ui.program_id = ?
+            GROUP BY ui.municipality 
+            ORDER BY ui.municipality ASC
+        ");
+        $stmt->execute([$admin_program_id]);
+        $municipality_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching municipality statistics: " . $e->getMessage());
+    }
 }
 
-// Fetch current college statistics
+// Fetch current college statistics (filtered by admin's program)
 $college_stats = [];
-try {
-    $stmt = $pdo->prepare("
-        SELECT 
-            up.current_college,
-            COUNT(*) as total_count,
-            SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
-            SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
-        FROM user_personal up
-        JOIN users u ON up.user_id = u.id
-        JOIN users_info ui ON u.id = ui.user_id
-        WHERE up.current_college IS NOT NULL 
-            AND up.current_college != ''
-            AND u.role = 'Applicant'
-        GROUP BY up.current_college 
-        ORDER BY up.current_college ASC
-    ");
-    $stmt->execute();
-    $college_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    error_log("Error fetching college statistics: " . $e->getMessage());
+if ($admin_program_id) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT 
+                up.current_college,
+                COUNT(*) as total_count,
+                SUM(CASE WHEN ui.application_status = 'Approved' THEN 1 ELSE 0 END) as approved_count,
+                SUM(CASE WHEN ui.application_status = 'Denied' THEN 1 ELSE 0 END) as denied_count
+            FROM user_personal up
+            JOIN users u ON up.user_id = u.id
+            JOIN users_info ui ON u.id = ui.user_id
+            WHERE up.current_college IS NOT NULL 
+                AND up.current_college != ''
+                AND u.role = 'Applicant'
+                AND ui.program_id = ?
+            GROUP BY up.current_college 
+            ORDER BY up.current_college ASC
+        ");
+        $stmt->execute([$admin_program_id]);
+        $college_stats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching college statistics: " . $e->getMessage());
+    }
+}
+
+// Fetch all applicants for the report (filtered by admin's program)
+$report_applicants = [];
+if ($admin_program_id) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT 
+                u.id,
+                u.firstname,
+                u.lastname,
+                u.middlename,
+                u.email,
+                u.contact_no,
+                ui.application_status,
+                ui.claim_status,
+                ui.municipality,
+                ui.barangay,
+                ui.sex AS gender,
+                ui.civil_status,
+                ui.birthdate,
+                ui.place_of_birth,
+                up.degree,
+                up.course,
+                up.current_college,
+                ur.permanent_address,
+                uf.father_name,
+                uf.father_occupation,
+                uf.mother_name,
+                uf.mother_occupation,
+                u.created_at
+            FROM users u
+            LEFT JOIN users_info ui ON u.id = ui.user_id
+            LEFT JOIN user_personal up ON u.id = up.user_id
+            LEFT JOIN user_residency ur ON u.id = ur.user_id
+            LEFT JOIN user_fam uf ON u.id = uf.user_id
+            WHERE u.role = 'Applicant' 
+                AND ui.program_id = ?
+            ORDER BY u.lastname ASC, u.firstname ASC
+        ");
+        $stmt->execute([$admin_program_id]);
+        $report_applicants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching applicants for report: " . $e->getMessage());
+    }
 }
 ?>
 
@@ -788,6 +945,7 @@ try {
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link rel="icon" type="image/png" href="./images/logo1.png">
     <link rel="stylesheet" href="adminstyles.css">
     
@@ -795,10 +953,12 @@ try {
     .chart-stats-section {
         margin: 2rem 0;
         padding: 1.5rem;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        overflow: hidden; /* Add this to prevent overflow issues */
+        background: var(--bg-gradient-card);
+        backdrop-filter: blur(10px);
+        border-radius: 24px;
+        box-shadow: var(--shadow-md);
+        border: 1px solid var(--border-color);
+        overflow: hidden;
     }
 
     .charts-flex {
@@ -809,25 +969,32 @@ try {
 
     .chart-card {
         flex: 1;
-        min-width: 300px; /* Reduce minimum width for better mobile display */
+        min-width: 300px;
         padding: 1.5rem;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        background: rgba(15, 23, 42, 0.4);
+        border-radius: 16px;
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border-color);
+        backdrop-filter: blur(10px);
     }
 
     .chart-container {
         position: relative;
         width: 100%;
-        height: 300px !important; /* Force consistent height */
+        height: 300px !important;
         max-height: 400px;
     }
 
     .chart-card h3 {
         margin-bottom: 1rem;
-        color: #1f2937;
-        font-size: 1.1rem;
+        color: var(--text-bright);
+        font-size: 1.2rem;
+        font-weight: 600;
         text-align: center;
+        background: var(--bg-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
 
     /* Responsive adjustments */
@@ -1051,25 +1218,32 @@ try {
     .view-all-container {
         margin: 1rem 0;
         text-align: center;
+        width: 100%;
     }
 
     .view-all-btn {
-        background: none;
-        border: none;
-        color: #4f46e5;
+        width: 100%;
+        padding: 0.75rem 1rem;
+        background: rgba(15, 23, 42, 0.6);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        color: var(--text-bright);
         cursor: pointer;
-        font-size: 0.9rem;
-        padding: 0.5rem 1rem;
+        font-size: 1rem;
+        font-weight: 500;
         display: flex;
         align-items: center;
+        justify-content: center;
         gap: 0.5rem;
-        margin: 0 auto;
         transition: all 0.3s ease;
     }
 
     .view-all-btn:hover {
-        color: #4338ca;
-        text-decoration: underline;
+        background: rgba(49, 46, 129, 0.8);
+        border-color: var(--border-hover);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
     }
 
     .view-all-btn i {
@@ -1082,9 +1256,9 @@ try {
 
     .detailed-info {
         margin-top: 1rem;
-        padding: 1.5rem;
-        background: #f9fafb;
-        border-radius: 8px;
+        padding: 0;
+        background: transparent;
+        border-radius: 0;
         animation: slideDown 0.3s ease-out;
         max-height: 600px;
         overflow-y: auto;
@@ -1094,9 +1268,11 @@ try {
     .info-section {
         margin-bottom: 1.5rem;
         padding: 1.5rem;
-        background: #ffffff;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        background: var(--bg-gradient-card);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border-color);
         width: 100%;
     }
 
@@ -1105,19 +1281,24 @@ try {
     }
 
     .info-section h4 {
-        color: #4f46e5;
+        background: var(--bg-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
         margin-bottom: 1rem;
-        font-size: 1.1rem;
+        font-size: 1.2rem;
         font-weight: 600;
         padding-bottom: 0.5rem;
-        border-bottom: 2px solid #e5e7eb;
+        border-bottom: 2px solid var(--primary-color);
     }
 
     .family-member {
         margin-bottom: 1.5rem;
         padding: 1.5rem;
-        background: #f3f4f6;
-        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.4);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
         width: 100%;
     }
 
@@ -1126,9 +1307,12 @@ try {
     }
 
     .family-member h5 {
-        color: #4f46e5;
+        background: var(--bg-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
         margin-bottom: 1rem;
-        font-size: 1rem;
+        font-size: 1.1rem;
         font-weight: 600;
     }
 
@@ -1138,7 +1322,8 @@ try {
         display: flex;
         justify-content: space-between;
         padding: 0.5rem 0;
-        border-bottom: 1px solid #f3f4f6;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-color);
     }
 
     .detailed-info p:last-child {
@@ -1146,8 +1331,9 @@ try {
     }
 
     .detailed-info p strong {
-        color: #4b5563;
+        color: var(--text-bright);
         min-width: 200px;
+        font-weight: 600;
     }
 
     .detailed-info::-webkit-scrollbar {
@@ -1155,17 +1341,17 @@ try {
     }
 
     .detailed-info::-webkit-scrollbar-track {
-        background: #f1f1f1;
+        background: var(--bg-main);
         border-radius: 4px;
     }
 
     .detailed-info::-webkit-scrollbar-thumb {
-        background: #4f46e5;
+        background: var(--primary-color);
         border-radius: 4px;
     }
 
     .detailed-info::-webkit-scrollbar-thumb:hover {
-        background: #4338ca;
+        background: var(--primary-hover);
     }
 
     @keyframes slideDown {
@@ -1277,6 +1463,42 @@ try {
         top: 1.5rem;
     }
 
+    /* Verification Badge Styles */
+    .verification-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .verification-badge.verified {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    .verification-badge.rejected {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .verification-badge.under-review {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .verification-badge.pending {
+        background: rgba(156, 163, 175, 0.15);
+        color: #9ca3af;
+        border: 1px solid rgba(156, 163, 175, 0.3);
+    }
+
     /* Add these styles in the <style> section */
     .success-modal {
         display: none;
@@ -1372,26 +1594,54 @@ try {
     }
 
     .deadline-card {
-        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        background: var(--bg-gradient);
         color: white;
         padding: 1.5rem;
-        border-radius: 12px;
+        border-radius: 24px;
         display: flex;
         align-items: center;
         gap: 1.5rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-lg);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .deadline-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+        pointer-events: none;
     }
 
     .deadline-card i {
         font-size: 2rem;
-        color: rgba(255, 255, 255, 0.9);
+        color: rgba(255, 255, 255, 0.95);
+        position: relative;
+        z-index: 1;
+    }
+
+    .deadline-details {
+        position: relative;
+        z-index: 1;
     }
 
     .deadline-details h3 {
         margin: 0;
         font-size: 1.2rem;
-        font-weight: 500;
-        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.95);
+    }
+
+    .deadline-details p {
+        margin: 0.5rem 0 0 0;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: white;
     }
 
     .deadline-details p {
@@ -1416,6 +1666,501 @@ try {
 
         .deadline-details p {
             font-size: 1.25rem;
+        }
+    }
+
+    /* ============= OCR STYLES ============= */
+    
+    .ocr-modal {
+        display: none !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 2000;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    .ocr-modal.show {
+        display: flex !important;
+    }
+
+    .ocr-modal-content {
+        background-color: #ffffff;
+        padding: 2rem;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 800px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        animation: modalSlideIn 0.3s ease-out;
+        position: relative;
+    }
+
+    @keyframes modalSlideIn {
+        from {
+            opacity: 0;
+            transform: scale(0.9);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    .ocr-modal-content h3 {
+        color: #1f2937;
+        margin-bottom: 1.5rem;
+        margin-top: 0;
+        font-size: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-right: 2rem;
+    }
+
+    .ocr-modal-content .close-btn {
+        position: absolute;
+        top: 1.5rem;
+        right: 1.5rem;
+        background: none;
+        border: none;
+        font-size: 1.8rem;
+        color: #6b7280;
+        cursor: pointer;
+        transition: color 0.2s ease;
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .ocr-modal-content .close-btn:hover {
+        color: #1f2937;
+    }
+
+    .ocr-container {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .ocr-controls {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+    }
+
+    .ocr-btn {
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        color: white;
+        border: none;
+        padding: 0.875rem 1.75rem;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    }
+
+    .ocr-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
+    }
+
+    .ocr-btn:active {
+        transform: translateY(0);
+    }
+
+    .ocr-quick-btn {
+        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+    }
+
+    .ocr-quick-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+    }
+
+    .spinner {
+        border: 4px solid #e5e7eb;
+        border-top: 4px solid #4f46e5;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 1rem;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .ocr-result-section,
+    .ocr-stats-section,
+    .ocr-info-section {
+        background: #f9fafb;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+    }
+
+    .ocr-result-section h4,
+    .ocr-stats-section h4,
+    .ocr-info-section h4 {
+        color: #1f2937;
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .ocr-text-container {
+        background: white;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .ocr-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .stat {
+        background: white;
+        padding: 1rem;
+        border-radius: 6px;
+        border-left: 4px solid #4f46e5;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .stat .label {
+        font-weight: 500;
+        color: #6b7280;
+        font-size: 0.9rem;
+    }
+
+    .stat .value {
+        font-weight: 600;
+        color: #1f2937;
+        font-size: 1.1rem;
+    }
+
+    .ocr-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+    }
+
+    .action-btn {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.95rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .accept-btn {
+        background: #10b981;
+        color: white;
+    }
+
+    .accept-btn:hover {
+        background: #059669;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .retry-btn {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .retry-btn:hover {
+        background: #2563eb;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+
+    .reject-btn {
+        background: #ef4444;
+        color: white;
+    }
+
+    .reject-btn:hover {
+        background: #dc2626;
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    }
+
+    .ocr-modal-content::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .ocr-modal-content::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+
+    .ocr-modal-content::-webkit-scrollbar-thumb {
+        background: #4f46e5;
+        border-radius: 4px;
+    }
+
+    .ocr-modal-content::-webkit-scrollbar-thumb:hover {
+        background: #4338ca;
+    }
+
+    @media (max-width: 768px) {
+        .ocr-modal-content {
+            width: 95%;
+            max-width: 100%;
+            padding: 1.5rem;
+        }
+
+        .ocr-stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .ocr-actions {
+            flex-direction: column;
+        }
+
+        .action-btn {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .ocr-modal-content {
+            padding: 1rem;
+        }
+
+        .ocr-stats-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .ocr-modal-content h3 {
+            font-size: 1.2rem;
+        }
+    }
+
+    /* Report Generator Styles */
+    .generate-report-btn {
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        color: white;
+        border: none;
+        padding: 0.875rem 1.75rem;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    }
+
+    .generate-report-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
+        background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%);
+    }
+
+    .generate-report-btn:active {
+        transform: translateY(0);
+    }
+
+    .generate-report-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .generate-report-btn i {
+        font-size: 1.1rem;
+    }
+
+    @media (max-width: 768px) {
+        .report-generator-section {
+            text-align: center !important;
+            margin-bottom: 1.5rem !important;
+        }
+
+        .generate-report-btn {
+            width: 100%;
+            justify-content: center;
+            padding: 1rem 1.5rem;
+        }
+
+        .pdf-stats-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .pdf-stats-grid {
+            grid-template-columns: 1fr !important;
+        }
+    }
+
+    /* PDF Report Styles */
+    .pdf-report-container {
+        background: white;
+        padding: 0;
+        font-family: 'Arial', sans-serif;
+    }
+
+    .pdf-report-header {
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        color: white;
+        padding: 2rem;
+        text-align: center;
+        border-bottom: 3px solid #3730a3;
+    }
+
+    .pdf-report-header h1 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }
+
+    .pdf-report-header .subtitle {
+        margin-top: 0.5rem;
+        font-size: 1rem;
+        opacity: 0.9;
+    }
+
+    .pdf-report-body {
+        padding: 2rem;
+        color: #1f2937;
+    }
+
+    .pdf-report-section {
+        margin-bottom: 2rem;
+        page-break-inside: avoid;
+    }
+
+    .pdf-report-section h2 {
+        color: #4f46e5;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .pdf-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .pdf-stat-card {
+        background: #f9fafb;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border-left: 4px solid #4f46e5;
+        text-align: center;
+    }
+
+    .pdf-stat-card h3 {
+        font-size: 2rem;
+        margin: 0;
+        color: #4f46e5;
+        font-weight: 700;
+    }
+
+    .pdf-stat-card p {
+        margin: 0.5rem 0 0 0;
+        color: #6b7280;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    .pdf-chart-container {
+        margin: 1.5rem 0;
+        page-break-inside: avoid;
+    }
+
+    .pdf-chart-container canvas {
+        max-width: 100%;
+        height: auto;
+    }
+
+    .pdf-report-footer {
+        background: #1f2937;
+        color: white;
+        padding: 1.5rem;
+        text-align: center;
+        margin-top: 2rem;
+        border-top: 3px solid #4f46e5;
+    }
+
+    .pdf-report-footer p {
+        margin: 0.25rem 0;
+        font-size: 0.9rem;
+    }
+
+    .pdf-report-footer .footer-title {
+        font-weight: 600;
+        font-size: 1rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .pdf-report-meta {
+        background: #f3f4f6;
+        padding: 1rem;
+        border-radius: 6px;
+        margin-bottom: 2rem;
+        font-size: 0.9rem;
+        color: #6b7280;
+    }
+
+    .pdf-report-meta p {
+        margin: 0.25rem 0;
+    }
+
+    @media print {
+        .pdf-report-container {
+            display: block;
         }
     }
     </style>
@@ -1508,6 +2253,12 @@ try {
 
             <!-- Dashboard View -->
             <?php if ($view === 'dashboard'): ?>
+                <!-- Generate Report Button -->
+                <div class="report-generator-section" style="margin-bottom: 2rem; text-align: right;">
+                    <button id="generateReportBtn" class="generate-report-btn">
+                        <i class="fas fa-file-pdf"></i> Generate Analytics Report
+                    </button>
+                </div>
                 <!-- Application Deadline Display -->
                 <?php
                 try {
@@ -1553,7 +2304,7 @@ try {
                     </div>
                 </div>
                 <div class="chart-stats-section">
-                    <h2>Chart Statistics</h2>
+                    <h2 style="background: var(--bg-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 1.75rem; font-weight: 700; margin-bottom: 1.5rem;">Chart Statistics</h2>
                     <div class="charts-flex">
                         <div class="chart-card municipality-distribution">
                             <h3>Municipality Distribution</h3>
@@ -1739,85 +2490,93 @@ try {
                             <div id="detailed-info-<?php echo $applicant['id']; ?>" class="detailed-info" style="display: none;">
                                 <div class="info-section">
                                     <h4>Personal Information</h4>
-                                    <p><strong>Birthdate:</strong> <?php echo htmlspecialchars($applicant['birthdate'] ?: '-'); ?></p>
-                                    <p><strong>Gender:</strong> <?php echo htmlspecialchars($applicant['gender'] ?: '-'); ?></p>
-                                    <p><strong>Civil Status:</strong> <?php echo htmlspecialchars($applicant['civil_status'] ?: '-'); ?></p>
-                                    <p><strong>Place of Birth:</strong> <?php echo htmlspecialchars($applicant['place_of_birth'] ?: '-'); ?></p>
-                                    <p><strong>Degree:</strong> <?php echo htmlspecialchars($applicant['degree'] ?: '-'); ?></p>
-                                    <p><strong>Course:</strong> <?php echo htmlspecialchars($applicant['course'] ?: '-'); ?></p>
-                                    <p><strong>Current College:</strong> <?php echo htmlspecialchars($applicant['current_college'] ?: '-'); ?></p>
+                                    <div class="info-row"><strong>Birthdate:</strong> <span><?php echo htmlspecialchars($applicant['birthdate'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Gender:</strong> <span><?php echo htmlspecialchars($applicant['gender'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Civil Status:</strong> <span><?php echo htmlspecialchars($applicant['civil_status'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Place of Birth:</strong> <span><?php echo htmlspecialchars($applicant['place_of_birth'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Degree:</strong> <span><?php echo htmlspecialchars($applicant['degree'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Course:</strong> <span><?php echo htmlspecialchars($applicant['course'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Current College:</strong> <span><?php echo htmlspecialchars($applicant['current_college'] ?: '-'); ?></span></div>
                                 </div>
 
                                 <div class="info-section">
                                     <h4>Residency Information</h4>
-                                    <p><strong>Permanent Address:</strong> <?php echo htmlspecialchars($applicant['permanent_address'] ?: '-'); ?></p>
-                                    <p><strong>Municipality:</strong> <?php echo htmlspecialchars($applicant['municipality'] ?: '-'); ?></p>
-                                    <p><strong>Barangay:</strong> <?php echo htmlspecialchars($applicant['barangay'] ?: '-'); ?></p>
-                                    <p><strong>Residency Duration:</strong> <?php echo htmlspecialchars($applicant['residency_duration'] ?: '-'); ?></p>
-                                    <p><strong>Registered Voter:</strong> <?php echo htmlspecialchars($applicant['registered_voter'] ?: '-'); ?></p>
-                                    <p><strong>Father's Voting Duration:</strong> <?php echo htmlspecialchars($applicant['father_voting_duration'] ?: '-'); ?></p>
-                                    <p><strong>Mother's Voting Duration:</strong> <?php echo htmlspecialchars($applicant['mother_voting_duration'] ?: '-'); ?></p>
-                                    <p><strong>Applicant's Voting Duration:</strong> <?php echo htmlspecialchars($applicant['applicant_voting_duration'] ?: '-'); ?></p>
-                                    <p><strong>Guardian Name:</strong> <?php echo htmlspecialchars($applicant['guardian_name'] ?: '-'); ?></p>
-                                    <p><strong>Relationship:</strong> <?php echo htmlspecialchars($applicant['relationship'] ?: '-'); ?></p>
-                                    <p><strong>Guardian Address:</strong> <?php echo htmlspecialchars($applicant['guardian_address'] ?: '-'); ?></p>
-                                    <p><strong>Guardian Contact:</strong> <?php echo htmlspecialchars($applicant['guardian_contact'] ?: '-'); ?></p>
+                                    <div class="info-row"><strong>Permanent Address:</strong> <span><?php echo htmlspecialchars($applicant['permanent_address'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Municipality:</strong> <span><?php echo htmlspecialchars($applicant['municipality'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Barangay:</strong> <span><?php echo htmlspecialchars($applicant['barangay'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Guardian Name:</strong> <span><?php echo htmlspecialchars($applicant['guardian_name'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Relationship:</strong> <span><?php echo htmlspecialchars($applicant['relationship'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Guardian Address:</strong> <span><?php echo htmlspecialchars($applicant['guardian_address'] ?: '-'); ?></span></div>
+                                    <div class="info-row"><strong>Guardian Contact:</strong> <span><?php echo htmlspecialchars($applicant['guardian_contact'] ?: '-'); ?></span></div>
                                 </div>
 
                                 <div class="info-section">
                                     <h4>Family Background</h4>
                                     <div class="family-member">
                                         <h5>Father's Information</h5>
-                                        <p><strong>Name:</strong> <?php echo htmlspecialchars($applicant['father_name'] ?: '-'); ?></p>
-                                        <p><strong>Address:</strong> <?php echo htmlspecialchars($applicant['father_address'] ?: '-'); ?></p>
-                                        <p><strong>Contact:</strong> <?php echo htmlspecialchars($applicant['father_contact'] ?: '-'); ?></p>
-                                        <p><strong>Occupation:</strong> <?php echo htmlspecialchars($applicant['father_occupation'] ?: '-'); ?></p>
-                                        <p><strong>Office Address:</strong> <?php echo htmlspecialchars($applicant['father_office_address'] ?: '-'); ?></p>
-                                        <p><strong>Telephone No:</strong> <?php echo htmlspecialchars($applicant['father_tel_no'] ?: '-'); ?></p>
-                                        <p><strong>Age:</strong> <?php echo htmlspecialchars($applicant['father_age'] ?: '-'); ?></p>
-                                        <p><strong>Date of Birth:</strong> <?php echo htmlspecialchars($applicant['father_dob'] ?: '-'); ?></p>
-                                        <p><strong>Citizenship:</strong> <?php echo htmlspecialchars($applicant['father_citizenship'] ?: '-'); ?></p>
-                                        <p><strong>Religion:</strong> <?php echo htmlspecialchars($applicant['father_religion'] ?: '-'); ?></p>
+                                        <div class="info-row"><strong>Name:</strong> <span><?php echo htmlspecialchars($applicant['father_name'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Address:</strong> <span><?php echo htmlspecialchars($applicant['father_address'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Contact:</strong> <span><?php echo htmlspecialchars($applicant['father_contact'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Occupation:</strong> <span><?php echo htmlspecialchars($applicant['father_occupation'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Office Address:</strong> <span><?php echo htmlspecialchars($applicant['father_office_address'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Telephone No:</strong> <span><?php echo htmlspecialchars($applicant['father_tel_no'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Age:</strong> <span><?php echo htmlspecialchars($applicant['father_age'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Date of Birth:</strong> <span><?php echo htmlspecialchars($applicant['father_dob'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Citizenship:</strong> <span><?php echo htmlspecialchars($applicant['father_citizenship'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Religion:</strong> <span><?php echo htmlspecialchars($applicant['father_religion'] ?: '-'); ?></span></div>
                                     </div>
 
                                     <div class="family-member">
                                         <h5>Mother's Information</h5>
-                                        <p><strong>Name:</strong> <?php echo htmlspecialchars($applicant['mother_name'] ?: '-'); ?></p>
-                                        <p><strong>Address:</strong> <?php echo htmlspecialchars($applicant['mother_address'] ?: '-'); ?></p>
-                                        <p><strong>Contact:</strong> <?php echo htmlspecialchars($applicant['mother_contact'] ?: '-'); ?></p>
-                                        <p><strong>Occupation:</strong> <?php echo htmlspecialchars($applicant['mother_occupation'] ?: '-'); ?></p>
-                                        <p><strong>Office Address:</strong> <?php echo htmlspecialchars($applicant['mother_office_address'] ?: '-'); ?></p>
-                                        <p><strong>Telephone No:</strong> <?php echo htmlspecialchars($applicant['mother_tel_no'] ?: '-'); ?></p>
-                                        <p><strong>Age:</strong> <?php echo htmlspecialchars($applicant['mother_age'] ?: '-'); ?></p>
-                                        <p><strong>Date of Birth:</strong> <?php echo htmlspecialchars($applicant['mother_dob'] ?: '-'); ?></p>
-                                        <p><strong>Citizenship:</strong> <?php echo htmlspecialchars($applicant['mother_citizenship'] ?: '-'); ?></p>
-                                        <p><strong>Religion:</strong> <?php echo htmlspecialchars($applicant['mother_religion'] ?: '-'); ?></p>
-                                    </div>
-                                </div>
-
-                                <div class="info-section">
+                                        <div class="info-row"><strong>Name:</strong> <span><?php echo htmlspecialchars($applicant['mother_name'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Address:</strong> <span><?php echo htmlspecialchars($applicant['mother_address'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Contact:</strong> <span><?php echo htmlspecialchars($applicant['mother_contact'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Occupation:</strong> <span><?php echo htmlspecialchars($applicant['mother_occupation'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Office Address:</strong> <span><?php echo htmlspecialchars($applicant['mother_office_address'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Telephone No:</strong> <span><?php echo htmlspecialchars($applicant['mother_tel_no'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Age:</strong> <span><?php echo htmlspecialchars($applicant['mother_age'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Date of Birth:</strong> <span><?php echo htmlspecialchars($applicant['mother_dob'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Citizenship:</strong> <span><?php echo htmlspecialchars($applicant['mother_citizenship'] ?: '-'); ?></span></div>
+                                        <div class="info-row"><strong>Religion:</strong> <span><?php echo htmlspecialchars($applicant['mother_religion'] ?: '-'); ?></span></div>
+                                        <div class="info-section">
                                     <h4>Documents</h4>
                                     <p><strong>Certificate of Registration:</strong> 
                                         <?php 
-                                        echo isset($applicant['documents']['cor']) 
-                                            ? '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['cor']) . '\', \'Certificate of Registration\')">View</button>' 
-                                            : '-'; 
+                                        if (isset($applicant['documents']['cor'])) {
+                                            $cor_status = $applicant['verification_status']['cor_file']['verification_status'] ?? 'Pending';
+                                            $status_class = strtolower(str_replace(' ', '-', $cor_status));
+                                            echo '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['cor']) . '\', \'Certificate of Registration\', \'cor_file\', ' . $applicant['id'] . ')">View</button> ';
+                                            echo '<span class="verification-badge ' . $status_class . '">' . htmlspecialchars($cor_status) . '</span>';
+                                        } else {
+                                            echo '-';
+                                        }
                                         ?>
                                     </p>
                                     <p><strong>Certificate of Indigency:</strong> 
                                         <?php 
-                                        echo isset($applicant['documents']['indigency']) 
-                                            ? '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['indigency']) . '\', \'Certificate of Indigency\')">View</button>' 
-                                            : '-'; 
+                                        if (isset($applicant['documents']['indigency'])) {
+                                            $indigency_status = $applicant['verification_status']['indigency_file']['verification_status'] ?? 'Pending';
+                                            $status_class = strtolower(str_replace(' ', '-', $indigency_status));
+                                            echo '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['indigency']) . '\', \'Certificate of Indigency\', \'indigency_file\', ' . $applicant['id'] . ')">View</button> ';
+                                            echo '<span class="verification-badge ' . $status_class . '">' . htmlspecialchars($indigency_status) . '</span>';
+                                        } else {
+                                            echo '-';
+                                        }
                                         ?>
                                     </p>
                                     <p><strong>Voter Certificate:</strong> 
                                         <?php 
-                                        echo isset($applicant['documents']['voter']) 
-                                            ? '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['voter']) . '\', \'Voter Certificate\')">View</button>' 
-                                            : '-'; 
+                                        if (isset($applicant['documents']['voter'])) {
+                                            $voter_status = $applicant['verification_status']['voter_file']['verification_status'] ?? 'Pending';
+                                            $status_class = strtolower(str_replace(' ', '-', $voter_status));
+                                            echo '<button class="view-doc-btn" onclick="showDocumentModal(\'' . htmlspecialchars($applicant['documents']['voter']) . '\', \'Voter Certificate\', \'voter_file\', ' . $applicant['id'] . ')">View</button> ';
+                                            echo '<span class="verification-badge ' . $status_class . '">' . htmlspecialchars($voter_status) . '</span>';
+                                        } else {
+                                            echo '-';
+                                        }
                                         ?>
                                     </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2105,7 +2864,17 @@ try {
     <div id="documentModal" class="modal document-modal">
         <div class="modal-content document-modal-content">
             <span class="close-btn" onclick="closeDocumentModal()">&times;</span>
-            <h3 id="documentTitle">Document Preview</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h3 id="documentTitle" style="margin:0;">Document Preview</h3>
+                <div style="display:flex; gap:0.5rem;">
+                    <button class="ocr-quick-btn" onclick="openOCRForCurrentDocument()" title="Extract text from this document using OCR">
+                        <i class="fas fa-microchip"></i> Extract Text
+                    </button>
+                </div>
+            </div>
+            <div id="verificationStatus" style="margin-bottom:1rem; padding:0.75rem; border-radius:8px; display:none;">
+                <strong>Status: </strong><span id="verificationStatusText"></span>
+            </div>
             <div class="document-container">
                 <div class="pdf-toolbar">
                     <div class="pdf-controls">
@@ -2125,10 +2894,68 @@ try {
                     <iframe id="documentViewer" width="100%" height="100%" frameborder="0"></iframe>
                 </div>
             </div>
+            <div id="verificationActions" style="margin-top:1rem; display:flex; gap:0.5rem; justify-content:flex-end; display:none;">
+                <button class="verify-btn" onclick="verifyDocument('Verified')" style="background:#22c55e; color:white; padding:0.5rem 1rem; border:none; border-radius:6px; cursor:pointer;">
+                    <i class="fas fa-check-circle"></i> Verify
+                </button>
+                <button class="reject-btn" onclick="verifyDocument('Rejected')" style="background:#ef4444; color:white; padding:0.5rem 1rem; border:none; border-radius:6px; cursor:pointer;">
+                    <i class="fas fa-times-circle"></i> Reject
+                </button>
+                <button class="review-btn" onclick="verifyDocument('Under Review')" style="background:#f59e0b; color:white; padding:0.5rem 1rem; border:none; border-radius:6px; cursor:pointer;">
+                    <i class="fas fa-clock"></i> Under Review
+                </button>
+            </div>
         </div>
     </div>
 
+    <!-- OCR Text Extraction Modal -->
+    <div id="ocrModal" class="ocr-modal">
+        <div class="ocr-modal-content">
+            <span class="close-btn" onclick="closeOCRModal()">&times;</span>
+            <h3>Document Text Extraction (OCR)</h3>
+            <div class="ocr-container">
+                <div class="ocr-controls">
+                    <button id="ocr-start-btn" class="ocr-btn" onclick="startOCRExtraction()">
+                        <i class="fas fa-microchip"></i> Extract Text with OCR
+                    </button>
+                    <div id="ocr-loading" style="display:none; text-align:center;">
+                        <div class="spinner"></div>
+                        <p id="ocr-loading-text">Processing document...</p>
+                        <small id="ocr-loading-note" style="color:#6b7280; margin-top:10px; display:none;">This may take a minute on first use</small>
+                    </div>
+                </div>
+                
+                <div id="ocr-results" style="display:none;">
+                    <div class="ocr-result-section">
+                        <div class="ocr-text-container">
+                            <textarea id="ocr-extracted-text" readonly style="width:100%; height:350px; padding:10px; border:1px solid #ddd; border-radius:6px; font-family:'Courier New', monospace;"></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="ocr-actions">
+                        <button class="action-btn accept-btn" onclick="acceptOCRResults()" title="Accept and save these results">
+                            <i class="fas fa-check"></i> Accept & Save
+                        </button>
+                        <button class="action-btn retry-btn" onclick="retryOCRExtraction()" title="Try extracting text again">
+                            <i class="fas fa-redo"></i> Retry
+                        </button>
+                        <button class="action-btn reject-btn" onclick="rejectOCRResults()" title="Discard these results">
+                            <i class="fas fa-times"></i> Discard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
+        // Set PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <script>
+        
         document.addEventListener('DOMContentLoaded', function() {
             
             const ctxColumn = document.getElementById('applicationChart')?.getContext('2d');
@@ -2143,7 +2970,7 @@ try {
                             backgroundColor: [
                                 'rgba(34, 197, 94, 0.8)',
                                 'rgba(239, 68, 68, 0.8)',
-                                'rgba(79, 70, 229, 0.8)'
+                                'rgba(99, 102, 241, 0.8)'
                             ],
                             borderRadius: 8,
                             borderSkipped: false
@@ -2151,16 +2978,39 @@ try {
                     },
                     options: {
                         plugins: {
-                            legend: { display: false },
-                            tooltip: { enabled: true },
+                            legend: { 
+                                display: false 
+                            },
+                            tooltip: { 
+                                enabled: true,
+                                backgroundColor: 'rgba(30, 27, 75, 0.95)',
+                                titleColor: '#f8fafc',
+                                bodyColor: '#cbd5e1',
+                                borderColor: 'rgba(99, 102, 241, 0.3)',
+                                borderWidth: 1
+                            },
                             title: {
                                 display: false
                             }
                         },
                         scales: {
+                            x: {
+                                ticks: {
+                                    color: '#cbd5e1'
+                                },
+                                grid: {
+                                    color: 'rgba(99, 102, 241, 0.2)'
+                                }
+                            },
                             y: {
                                 beginAtZero: true,
-                                ticks: { stepSize: 1 }
+                                ticks: { 
+                                    stepSize: 1,
+                                    color: '#cbd5e1'
+                                },
+                                grid: {
+                                    color: 'rgba(99, 102, 241, 0.2)'
+                                }
                             }
                         }
                     }
@@ -2178,21 +3028,32 @@ try {
                             label: 'Applicants by Gender',
                             data: [<?php echo $male_count; ?>, <?php echo $female_count; ?>, <?php echo $other_count; ?>],
                             backgroundColor: [
-                                'rgba(54, 162, 235, 0.8)',
-                                'rgba(255, 99, 132, 0.8)',
-                                'rgba(255, 206, 86, 0.8)'
+                                'rgba(99, 102, 241, 0.8)',
+                                'rgba(168, 85, 247, 0.8)',
+                                'rgba(236, 72, 153, 0.8)'
                             ],
                             borderWidth: 2,
-                            borderColor: '#fff'
+                            borderColor: 'rgba(15, 23, 42, 0.6)'
                         }]
                     },
                     options: {
                         plugins: {
                             legend: {
                                 position: 'bottom',
-                                labels: { font: { size: 14, weight: 'bold' } }
+                                labels: { 
+                                    font: { size: 14, weight: 'bold' },
+                                    color: '#cbd5e1',
+                                    padding: 15
+                                }
                             },
-                            tooltip: { enabled: true },
+                            tooltip: { 
+                                enabled: true,
+                                backgroundColor: 'rgba(30, 27, 75, 0.95)',
+                                titleColor: '#f8fafc',
+                                bodyColor: '#cbd5e1',
+                                borderColor: 'rgba(99, 102, 241, 0.3)',
+                                borderWidth: 1
+                            },
                             title: {
                                 display: false
                             }
@@ -2258,47 +3119,63 @@ try {
                         });
 
                         if (code) {
-                            const url = new URL(code.data);
-                            const token = url.searchParams.get('token');
+                            // Validate that the QR code data is a valid URL before creating URL object
+                            try {
+                                const url = new URL(code.data);
+                                const token = url.searchParams.get('token');
 
-                            if (token) {
-                                fetch('admindashboard.php', {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/x-www-form-urlencoded',
-                                    },
-                                    body: 'action=verify_token&token=' + encodeURIComponent(token)
-                                })
-                                .then(response => response.json())
-                                .then(data => {
-                                    if (data.success) {
-                                        qrResult.classList.remove('error');
-                                        qrResult.classList.add('success');
-                                        qrResult.innerHTML = `<p>${data.message}</p>`;
-                                        successSound.play().catch(error => {
-                                            console.error('Error playing success sound:', error);
-                                        });
-                                        
-                                        window.location.href = `admindashboard.php?view=claim_photo&user_id=${data.user_id}`;
-                                    } else {
+                                if (token) {
+                                    fetch('admindashboard.php', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/x-www-form-urlencoded',
+                                        },
+                                        body: 'action=verify_token&token=' + encodeURIComponent(token)
+                                    })
+                                    .then(response => response.json())
+                                    .then(data => {
+                                        if (data.success) {
+                                            qrResult.classList.remove('error');
+                                            qrResult.classList.add('success');
+                                            qrResult.innerHTML = `<p>${data.message}</p>`;
+                                            successSound.play().catch(error => {
+                                                console.error('Error playing success sound:', error);
+                                            });
+                                            
+                                            window.location.href = `admindashboard.php?view=claim_photo&user_id=${data.user_id}`;
+                                        } else {
+                                            qrResult.classList.remove('success');
+                                            qrResult.classList.add('error');
+                                            qrResult.innerHTML = `<p>${data.message}</p>`;
+                                            errorSound.play().catch(error => {
+                                                console.error('Error playing error sound:', error);
+                                            });
+                                        }
+                                        stopScanner();
+                                        setTimeout(() => {
+                                            if (window.location.search.includes('view=qrscanner')) {
+                                                startScanner();
+                                            }
+                                        }, 3000);
+                                    })
+                                    .catch(error => {
                                         qrResult.classList.remove('success');
                                         qrResult.classList.add('error');
-                                        qrResult.innerHTML = `<p>${data.message}</p>`;
+                                        qrResult.innerHTML = '<p>Error verifying token: ' + error.message + '</p>';
                                         errorSound.play().catch(error => {
                                             console.error('Error playing error sound:', error);
                                         });
-                                    }
-                                    stopScanner();
-                                    setTimeout(() => {
-                                        if (window.location.search.includes('view=qrscanner')) {
-                                            startScanner();
-                                        }
-                                    }, 3000);
-                                })
-                                .catch(error => {
+                                        stopScanner();
+                                        setTimeout(() => {
+                                            if (window.location.search.includes('view=qrscanner')) {
+                                                startScanner();
+                                            }
+                                        }, 3000);
+                                    });
+                                } else {
                                     qrResult.classList.remove('success');
                                     qrResult.classList.add('error');
-                                    qrResult.innerHTML = '<p>Error verifying token: ' + error.message + '</p>';
+                                    qrResult.innerHTML = '<p>Invalid QR code: No token found.</p>';
                                     errorSound.play().catch(error => {
                                         console.error('Error playing error sound:', error);
                                     });
@@ -2308,11 +3185,12 @@ try {
                                             startScanner();
                                         }
                                     }, 3000);
-                                });
-                            } else {
+                                }
+                            } catch (urlError) {
+                                // Handle invalid URLs
                                 qrResult.classList.remove('success');
                                 qrResult.classList.add('error');
-                                qrResult.innerHTML = '<p>Invalid QR code: No token found.</p>';
+                                qrResult.innerHTML = '<p>Invalid QR code: Not a valid URL.</p>';
                                 errorSound.play().catch(error => {
                                     console.error('Error playing error sound:', error);
                                 });
@@ -2449,10 +3327,28 @@ try {
         });
 
         function openModal(modalId) {
+            // Close all other applicant modals first to prevent multiple modals from showing
+            const allModals = document.querySelectorAll('.modal');
+            allModals.forEach(modal => {
+                // Only close applicant modals (those starting with 'modal-'), not other modals like documentModal or success-modal
+                if (modal.id !== modalId && modal.id.startsWith('modal-')) {
+                    modal.style.display = 'none';
+                    // Also reset any form sections within closed modals
+                    const forms = modal.querySelectorAll('.form-section');
+                    forms.forEach(form => form.style.display = 'none');
+                    // Reset detailed info sections
+                    const detailedInfo = modal.querySelectorAll('.detailed-info');
+                    detailedInfo.forEach(info => info.style.display = 'none');
+                }
+            });
+            
+            // Open the requested modal
             const modal = document.getElementById(modalId);
             if (modal) {
                 modal.style.display = 'block';
                 document.body.style.overflow = 'hidden';
+            } else {
+                console.error('Modal not found: ' + modalId);
             }
         }
 
@@ -2462,10 +3358,23 @@ try {
                 modal.style.display = 'none';
                 document.body.style.overflow = 'auto';
                 
+                // Reset any form sections within the closed modal
                 const forms = modal.querySelectorAll('.form-section');
                 forms.forEach(form => form.style.display = 'none');
+                
+                // Reset detailed info sections
+                const detailedInfo = modal.querySelectorAll('.detailed-info');
+                detailedInfo.forEach(info => info.style.display = 'none');
             }
         }
+        
+        // Initialize: Ensure all applicant modals are closed on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const allApplicantModals = document.querySelectorAll('.modal[id^="modal-"]');
+            allApplicantModals.forEach(modal => {
+                modal.style.display = 'none';
+            });
+        });
 
         function openScheduleModal(modalId) {
             const modal = document.getElementById(modalId);
@@ -2650,8 +3559,8 @@ try {
                             {
                                 label: 'Total Applicants',
                                 data: municipalityData.map(item => parseInt(item.total_count) || 0),
-                                backgroundColor: '#4f46e5',
-                                borderColor: '#4338ca',
+                                backgroundColor: '#6366f1',
+                                borderColor: '#4f46e5',
                                 borderWidth: 1,
                                 maxBarThickness: 30,
                                 barPercentage: 0.8,
@@ -2765,8 +3674,8 @@ try {
                             {
                                 label: 'Total Applicants',
                                 data: collegeData.map(item => parseInt(item.total_count) || 0),
-                                backgroundColor: '#4f46e5',
-                                borderColor: '#4338ca',
+                                backgroundColor: '#6366f1',
+                                borderColor: '#4f46e5',
                                 borderWidth: 1,
                                 maxBarThickness: 30,
                                 barPercentage: 0.8,
@@ -2810,18 +3719,21 @@ try {
                                 beginAtZero: true,
                                 ticks: {
                                     stepSize: 1,
+                                    color: '#cbd5e1',
                                     font: {
                                         size: 10
                                     }
                                 },
                                 grid: {
-                                    display: true
+                                    display: true,
+                                    color: 'rgba(99, 102, 241, 0.2)'
                                 }
                             },
                             x: {
                                 ticks: {
                                     maxRotation: 45,
                                     minRotation: 45,
+                                    color: '#cbd5e1',
                                     font: {
                                         size: 10
                                     },
@@ -2838,8 +3750,10 @@ try {
                                 display: true,
                                 position: 'top',
                                 labels: {
+                                    color: '#cbd5e1',
                                     font: {
-                                        size: 12
+                                        size: 12,
+                                        weight: 'bold'
                                     },
                                     usePointStyle: true,
                                     padding: 20
@@ -2847,9 +3761,14 @@ try {
                             },
                             tooltip: {
                                 enabled: true,
-                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                backgroundColor: 'rgba(30, 27, 75, 0.95)',
+                                titleColor: '#f8fafc',
+                                bodyColor: '#cbd5e1',
+                                borderColor: 'rgba(99, 102, 241, 0.3)',
+                                borderWidth: 1,
                                 titleFont: {
-                                    size: 12
+                                    size: 12,
+                                    weight: 'bold'
                                 },
                                 bodyFont: {
                                     size: 12
@@ -2884,11 +3803,16 @@ try {
             }
         }
 
-        // Close modal when clicking outside
+        // Close modal when clicking outside (but not on modal content)
         window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
+            // Only close if clicking directly on the modal background (not on modal-content)
+            if (event.target.classList.contains('modal') && !event.target.closest('.modal-content')) {
+                const modal = event.target;
+                modal.style.display = 'none';
                 document.body.style.overflow = 'auto';
+                // Reset any form sections within the closed modal
+                const forms = modal.querySelectorAll('.form-section');
+                forms.forEach(form => form.style.display = 'none');
             }
         }
 
@@ -2972,8 +3896,8 @@ try {
                             {
                                 label: 'Total Applicants',
                                 data: municipalityData.map(item => parseInt(item.total_count) || 0),
-                                backgroundColor: '#4f46e5',
-                                borderColor: '#4338ca',
+                                backgroundColor: '#6366f1',
+                                borderColor: '#4f46e5',
                                 borderWidth: 1,
                                 maxBarThickness: 30,
                                 barPercentage: 0.8,
@@ -3087,8 +4011,8 @@ try {
                             {
                                 label: 'Total Applicants',
                                 data: collegeData.map(item => parseInt(item.total_count) || 0),
-                                backgroundColor: '#4f46e5',
-                                borderColor: '#4338ca',
+                                backgroundColor: '#6366f1',
+                                borderColor: '#4f46e5',
                                 borderWidth: 1,
                                 maxBarThickness: 30,
                                 barPercentage: 0.8,
@@ -3218,16 +4142,136 @@ try {
             viewer.style.width = `${currentZoom}%`;
         }
 
-        function showDocumentModal(documentUrl, title) {
+        // Store current document info for verification
+        let currentDocumentInfo = {
+            url: null,
+            type: null,
+            userId: null,
+            title: null
+        };
+
+        function showDocumentModal(documentUrl, title, documentType = null, userId = null) {
             const modal = document.getElementById('documentModal');
             const viewer = document.getElementById('documentViewer');
             const docTitle = document.getElementById('documentTitle');
+            const verificationStatus = document.getElementById('verificationStatus');
+            const verificationStatusText = document.getElementById('verificationStatusText');
+            const verificationActions = document.getElementById('verificationActions');
+            
+            // Store original document URL for OCR processing
+            currentOCRData.originalDocumentUrl = documentUrl;
+            currentOCRData.documentTitle = title;
+            
+            // Store document info for verification
+            currentDocumentInfo.url = documentUrl;
+            currentDocumentInfo.type = documentType;
+            currentDocumentInfo.userId = userId;
+            currentDocumentInfo.title = title;
             
             docTitle.textContent = title;
             viewer.src = documentUrl;
             document.getElementById('zoomLevel').value = '100';
+            
+            // Show verification status and actions if document type and user ID are provided
+            if (documentType && userId) {
+                verificationActions.style.display = 'flex';
+                loadVerificationStatus(userId, documentType);
+            } else {
+                verificationActions.style.display = 'none';
+                verificationStatus.style.display = 'none';
+            }
+            
             modal.style.display = 'block';
             document.body.style.overflow = 'hidden';
+        }
+
+        function loadVerificationStatus(userId, documentType) {
+            fetch(`ajax_get_document_status.php?user_id=${userId}&document_type=${documentType}`)
+                .then(response => response.json())
+                .then(data => {
+                    const verificationStatus = document.getElementById('verificationStatus');
+                    const verificationStatusText = document.getElementById('verificationStatusText');
+                    
+                    if (data.success && data.status) {
+                        verificationStatus.style.display = 'block';
+                        const status = data.status.verification_status || 'Pending';
+                        verificationStatusText.textContent = status;
+                        
+                        // Set status color
+                        verificationStatus.className = '';
+                        if (status === 'Verified') {
+                            verificationStatus.style.background = 'rgba(34, 197, 94, 0.1)';
+                            verificationStatus.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+                            verificationStatus.style.color = '#22c55e';
+                        } else if (status === 'Rejected') {
+                            verificationStatus.style.background = 'rgba(239, 68, 68, 0.1)';
+                            verificationStatus.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                            verificationStatus.style.color = '#ef4444';
+                        } else if (status === 'Under Review') {
+                            verificationStatus.style.background = 'rgba(245, 158, 11, 0.1)';
+                            verificationStatus.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+                            verificationStatus.style.color = '#f59e0b';
+                        } else {
+                            verificationStatus.style.background = 'rgba(156, 163, 175, 0.1)';
+                            verificationStatus.style.border = '1px solid rgba(156, 163, 175, 0.3)';
+                            verificationStatus.style.color = '#9ca3af';
+                        }
+                    } else {
+                        verificationStatus.style.display = 'block';
+                        verificationStatus.style.background = 'rgba(156, 163, 175, 0.1)';
+                        verificationStatus.style.border = '1px solid rgba(156, 163, 175, 0.3)';
+                        verificationStatus.style.color = '#9ca3af';
+                        verificationStatusText.textContent = 'Pending';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading verification status:', error);
+                });
+        }
+
+        function verifyDocument(status) {
+            if (!currentDocumentInfo.userId || !currentDocumentInfo.type) {
+                alert('Document information missing');
+                return;
+            }
+
+            const notes = prompt('Enter verification notes (optional):');
+            const rejectionReason = status === 'Rejected' ? prompt('Enter rejection reason (required):') : null;
+
+            if (status === 'Rejected' && !rejectionReason) {
+                alert('Rejection reason is required');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('action', 'verify_document');
+            formData.append('user_id', currentDocumentInfo.userId);
+            formData.append('document_type', currentDocumentInfo.type);
+            formData.append('status', status);
+            formData.append('notes', notes || '');
+            formData.append('rejection_reason', rejectionReason || '');
+
+            fetch('ajax_verify_document.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Document verification updated successfully');
+                    loadVerificationStatus(currentDocumentInfo.userId, currentDocumentInfo.type);
+                    // Reload page to update status badges
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    alert('Error: ' + (data.message || 'Failed to verify document'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error verifying document');
+            });
         }
 
         function setZoom(value) {
@@ -3275,6 +4319,654 @@ try {
                 closeDocumentModal();
             }
         });
+
+        // ============= OCR FUNCTIONALITY =============
+        
+        let currentOCRData = {
+            userId: null,
+            documentType: null,
+            documentUrl: null,
+            imageData: null
+        };
+
+        let ocrWorker = null;
+
+        /**
+         * Initialize Tesseract Worker
+         */
+        async function initializeTesseractWorker() {
+            if (!ocrWorker) {
+                try {
+                    const { createWorker } = Tesseract;
+                    ocrWorker = await createWorker();
+                    console.log('Tesseract worker initialized');
+                } catch (error) {
+                    console.error('Failed to initialize Tesseract:', error);
+                    showOCRError('Failed to initialize OCR engine. Please refresh the page.');
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /**
+         * Open OCR modal for current document
+         */
+        function openOCRForCurrentDocument() {
+            const documentTitle = document.getElementById('documentTitle');
+            const documentViewer = document.getElementById('documentViewer');
+            
+            // Use original document URL if available, otherwise fall back to iframe src
+            let documentUrl = currentOCRData.originalDocumentUrl || documentViewer?.src;
+            
+            console.log('openOCRForCurrentDocument called', {
+                titleExists: !!documentTitle,
+                viewerExists: !!documentViewer,
+                originalUrl: currentOCRData.originalDocumentUrl,
+                viewerSrc: documentViewer?.src,
+                finalUrl: documentUrl,
+                isPDF: documentUrl?.toLowerCase().includes('.pdf')
+            });
+            
+            if (!documentUrl) {
+                alert('No document loaded. Please view a document first.');
+                console.error('Document URL not found');
+                return;
+            }
+            
+            currentOCRData.documentUrl = documentUrl;
+            console.log('Document URL set to OCR:', currentOCRData.documentUrl);
+            
+            openOCRModal();
+        }
+
+        /**
+         * Open OCR Modal
+         */
+        function openOCRModal() {
+            const modal = document.getElementById('ocrModal');
+            if (modal) {
+                modal.classList.add('show');
+                document.body.style.overflow = 'hidden';
+                
+                // Reset OCR results - Show button, hide everything else
+                const startBtn = document.getElementById('ocr-start-btn');
+                const resultsDiv = document.getElementById('ocr-results');
+                const loadingDiv = document.getElementById('ocr-loading');
+                
+                if (startBtn) startBtn.style.display = 'block';
+                if (resultsDiv) resultsDiv.style.display = 'none';
+                if (loadingDiv) loadingDiv.style.display = 'none';
+            }
+        }
+
+        /**
+         * Close OCR Modal
+         */
+        function closeOCRModal() {
+            const modal = document.getElementById('ocrModal');
+            if (modal) {
+                modal.classList.remove('show');
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        /**
+         * Start OCR text extraction
+         */
+        async function startOCRExtraction() {
+            const startBtn = document.getElementById('ocr-start-btn');
+            const loadingDiv = document.getElementById('ocr-loading');
+            const resultsDiv = document.getElementById('ocr-results');
+            
+            console.log('startOCRExtraction called', {
+                documentUrl: currentOCRData.documentUrl,
+                startBtnExists: !!startBtn,
+                loadingExists: !!loadingDiv,
+                resultsExists: !!resultsDiv,
+                tesseractLoaded: typeof Tesseract !== 'undefined'
+            });
+            
+            // Check if Tesseract is loaded
+            if (typeof Tesseract === 'undefined') {
+                showOCRError('OCR library not loaded. Please refresh the page and try again.');
+                console.error('Tesseract library is not available');
+                return;
+            }
+            
+            if (!currentOCRData.documentUrl) {
+                showOCRError('No document URL available. Please open a document first.');
+                return;
+            }
+            
+            try {
+                // Hide button and show loading
+                if (startBtn) {
+                    startBtn.style.display = 'none';
+                    startBtn.removeAttribute('disabled');
+                }
+                if (loadingDiv) {
+                    loadingDiv.style.display = 'block';
+                    const loadingText = document.getElementById('ocr-loading-text');
+                    const loadingNote = document.getElementById('ocr-loading-note');
+                    
+                    // Update loading message based on document type
+                    if (currentOCRData.documentUrl.toLowerCase().includes('.pdf')) {
+                        if (loadingText) loadingText.textContent = 'Converting PDF to image...';
+                        if (loadingNote) loadingNote.style.display = 'block';
+                    } else {
+                        if (loadingText) loadingText.textContent = 'Extracting text from document...';
+                        if (loadingNote) loadingNote.style.display = 'none';
+                    }
+                }
+                if (resultsDiv) {
+                    resultsDiv.style.display = 'none';
+                }
+                
+                console.log('UI state updated to loading');
+                
+                // Initialize Tesseract
+                const initialized = await initializeTesseractWorker();
+                if (!initialized) {
+                    throw new Error('Tesseract initialization failed. Check console for details.');
+                }
+                
+                console.log('Tesseract initialized');
+                
+                // Convert document to image
+                console.log('Converting document to image from URL:', currentOCRData.documentUrl.substring(0, 100));
+                const imageData = await getDocumentAsImage(currentOCRData.documentUrl);
+                
+                if (!imageData) {
+                    throw new Error('Failed to convert document to image. The document may not be accessible.');
+                }
+                
+                console.log('Image data retrieved, length:', imageData.length);
+                
+                const startTime = performance.now();
+                
+                // Perform OCR
+                console.log('Starting OCR recognition...');
+                const result = await ocrWorker.recognize(imageData);
+                
+                const endTime = performance.now();
+                const processingTime = Math.round(endTime - startTime);
+                
+                console.log('OCR recognition complete', { time: processingTime, resultExists: !!result });
+                
+                if (!result || !result.data) {
+                    throw new Error('OCR returned invalid result');
+                }
+                
+                // Extract text and confidence
+                const extractedText = result.data.text || '';
+                const confidence = (result.data.confidence || 0) / 100; // Convert to decimal
+                
+                console.log('Extracted text length:', extractedText.length, 'Confidence:', confidence);
+                
+                if (!extractedText || extractedText.trim().length === 0) {
+                    showOCRWarning('No text could be extracted from the document. Try a clearer image.');
+                }
+                
+                // Validate extraction
+                const validation = validateOCRExtraction(extractedText, confidence);
+                
+                if (!validation.isValid) {
+                    showOCRWarning('Low quality extraction detected. Results may be inaccurate.');
+                }
+                
+                // Display results
+                displayOCRResults(extractedText, confidence, processingTime, validation);
+                
+                // Update UI
+                if (loadingDiv) {
+                    loadingDiv.style.display = 'none';
+                }
+                if (resultsDiv) {
+                    resultsDiv.style.display = 'block';
+                }
+                
+                console.log('OCR extraction complete', {
+                    text: extractedText.substring(0, 100) + '...',
+                    confidence: confidence,
+                    time: processingTime
+                });
+                
+            } catch (error) {
+                console.error('OCR Error:', error);
+                console.error('Error stack:', error.stack);
+                showOCRError('Error during text extraction: ' + error.message);
+                
+                // Reset UI on error
+                if (loadingDiv) {
+                    loadingDiv.style.display = 'none';
+                }
+                if (startBtn) {
+                    startBtn.style.display = 'block';
+                }
+                if (resultsDiv) {
+                    resultsDiv.style.display = 'none';
+                }
+            }
+        }
+
+        /**
+         * Convert document URL to image data
+         */
+        async function getDocumentAsImage(url) {
+            console.log('getDocumentAsImage called with URL:', url);
+            
+            return new Promise((resolve) => {
+                try {
+                    // If it's already a data URL or blob, use it directly
+                    if (url.includes('data:') || url.startsWith('blob:')) {
+                        console.log('URL is data or blob, using directly');
+                        resolve(url);
+                        return;
+                    }
+                    
+                    // Check if it's a PDF - more robust detection
+                    const lowerUrl = url.toLowerCase();
+                    const isPDF = lowerUrl.includes('.pdf') || 
+                                  lowerUrl.includes('pdf?') || 
+                                  lowerUrl.endsWith('pdf') ||
+                                  url.includes('application/pdf');
+                    
+                    console.log('PDF detection result:', {
+                        url: url,
+                        isPDF: isPDF,
+                        lowerUrl: lowerUrl
+                    });
+                    
+                    if (isPDF) {
+                        console.log('PDF detected, rendering to image...');
+                        convertPDFToImage(url).then(resolve).catch(error => {
+                            console.error('Error converting PDF:', error);
+                            resolve(null);
+                        });
+                        return;
+                    }
+                    
+                    // For iframe or other URLs, fetch and convert
+                    console.log('Fetching document from URL');
+                    fetch(url, {
+                        headers: {
+                            'Accept': 'image/*,application/pdf'
+                        }
+                    })
+                        .then(response => {
+                            console.log('Fetch response status:', response.status, 'content-type:', response.headers.get('content-type'));
+                            if (!response.ok) {
+                                throw new Error('Failed to fetch: ' + response.status + ' ' + response.statusText);
+                            }
+                            
+                            // Check if response is PDF
+                            const contentType = response.headers.get('content-type');
+                            if (contentType && contentType.includes('pdf')) {
+                                return response.blob().then(blob => {
+                                    const blobUrl = URL.createObjectURL(blob);
+                                    return convertPDFToImage(blobUrl).catch(e => {
+                                        console.error('Error converting fetched PDF:', e);
+                                        return null;
+                                    });
+                                });
+                            }
+                            return response.blob();
+                        })
+                        .then(result => {
+                            // If result is already a data URL from PDF conversion
+                            if (typeof result === 'string' && result.startsWith('data:')) {
+                                console.log('Resolved data URL from PDF conversion');
+                                resolve(result);
+                                return;
+                            }
+                            
+                            // Otherwise process as blob
+                            const blob = result;
+                            console.log('Blob received, size:', blob.size, 'type:', blob.type);
+                            
+                            if (blob.size === 0) {
+                                throw new Error('Empty blob received');
+                            }
+                            
+                            const reader = new FileReader();
+                            reader.onerror = () => {
+                                console.error('FileReader error:', reader.error);
+                                resolve(null);
+                            };
+                            reader.onloadend = () => {
+                                console.log('FileReader complete, result length:', reader.result.length);
+                                resolve(reader.result);
+                            };
+                            reader.readAsDataURL(blob);
+                        })
+                        .catch(error => {
+                            console.error('Error in fetch/conversion chain:', error.message);
+                            resolve(null);
+                        });
+                } catch (error) {
+                    console.error('Error in getDocumentAsImage try block:', error);
+                    resolve(null);
+                }
+            });
+        }
+        
+        /**
+         * Convert PDF to image using PDF.js
+         */
+        async function convertPDFToImage(pdfUrl) {
+            console.log('convertPDFToImage called with URL:', pdfUrl);
+            
+            try {
+                // Check if PDF.js is loaded
+                if (typeof pdfjsLib === 'undefined') {
+                    throw new Error('PDF.js library not loaded. Please refresh the page.');
+                }
+                
+                // Load the PDF document
+                const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+                console.log('PDF loaded, pages:', pdf.numPages);
+                
+                // Get first page
+                const page = await pdf.getPage(1);
+                const viewport = page.getViewport({ scale: 2 }); // 2x scale for better quality
+                
+                // Create canvas
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                
+                const context = canvas.getContext('2d');
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                // Render page to canvas
+                await page.render(renderContext).promise;
+                console.log('PDF page rendered to canvas');
+                
+                // Convert canvas to data URL
+                const imageData = canvas.toDataURL('image/png');
+                console.log('Canvas converted to data URL, length:', imageData.length);
+                
+                return imageData;
+            } catch (error) {
+                console.error('Error in convertPDFToImage:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Validate OCR extraction quality
+         */
+        function validateOCRExtraction(text, confidence) {
+            const textLength = text.trim().length;
+            const wordCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+            const hasNumbers = /\d/.test(text);
+            const hasLetters = /[a-zA-Z]/.test(text);
+            
+            let qualityScore = 0;
+            
+            if (textLength > 20) qualityScore += 20;
+            if (wordCount > 3) qualityScore += 20;
+            if (hasLetters) qualityScore += 20;
+            if (hasNumbers) qualityScore += 15;
+            if (confidence > 0.7) qualityScore += 25;
+            
+            const isValid = qualityScore >= 50;
+            
+            return {
+                isValid: isValid,
+                qualityScore: Math.min(qualityScore, 100),
+                textLength: textLength,
+                wordCount: wordCount,
+                hasNumbers: hasNumbers,
+                hasLetters: hasLetters,
+                confidence: confidence
+            };
+        }
+
+        /**
+         * Display OCR results in modal
+         */
+        function displayOCRResults(text, confidence, processingTime, validation) {
+            document.getElementById('ocr-extracted-text').value = text;
+            // Store metadata for saving later (but don't display it)
+            currentOCRData.confidence = confidence;
+            currentOCRData.processingTime = processingTime;
+        }
+
+
+        /**
+         * Accept and save OCR results
+         */
+        async function acceptOCRResults() {
+            const extractedText = document.getElementById('ocr-extracted-text').value;
+            const confidence = currentOCRData.confidence || 0;
+            const processingTime = currentOCRData.processingTime || 0;
+            
+            if (!extractedText.trim()) {
+                alert('No text to save');
+                return;
+            }
+            
+            try {
+                const response = await fetch('ajax_ocr_handler.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: new URLSearchParams({
+                        action: 'extract_text',
+                        user_id: currentOCRData.userId || '<?php echo $_SESSION['user_id']; ?>',
+                        document_type: currentOCRData.documentType || 'document',
+                        extracted_text: extractedText,
+                        confidence: confidence,
+                        processing_time: processingTime
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showOCRSuccess('Text extraction saved successfully!');
+                    setTimeout(() => {
+                        closeOCRModal();
+                    }, 2000);
+                } else {
+                    showOCRError('Failed to save results: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                showOCRError('Error saving OCR results: ' + error.message);
+            }
+        }
+
+        /**
+         * Retry OCR extraction
+         */
+        async function retryOCRExtraction() {
+            await startOCRExtraction();
+        }
+
+        /**
+         * Reject OCR results
+         */
+        function rejectOCRResults() {
+            const resultsDiv = document.getElementById('ocr-results');
+            const startBtn = document.getElementById('ocr-start-btn');
+            
+            resultsDiv.style.display = 'none';
+            startBtn.style.display = 'block';
+            
+            // Clear results
+            document.getElementById('ocr-extracted-text').value = '';
+        }
+
+        /**
+         * Show OCR error message
+         */
+        function showOCRError(message) {
+            const resultsDiv = document.getElementById('ocr-results');
+            const startBtn = document.getElementById('ocr-start-btn');
+            const loadingDiv = document.getElementById('ocr-loading');
+            const infoDiv = document.getElementById('ocr-detected-info');
+            
+            console.log('showOCRError called with message:', message);
+            
+            if (resultsDiv) resultsDiv.style.display = 'block';
+            if (startBtn) startBtn.style.display = 'block';
+            if (loadingDiv) loadingDiv.style.display = 'none';
+            
+            if (infoDiv) {
+                infoDiv.innerHTML = '<div style="color: #dc2626; padding: 10px; background: #fee2e2; border-radius: 6px; border-left: 4px solid #dc2626;"><strong>⚠️ Error:</strong> ' + message + '</div>';
+            }
+        }
+
+        /**
+         * Show OCR warning message
+         */
+        function showOCRWarning(message) {
+            const infoDiv = document.getElementById('ocr-detected-info');
+            const existingHTML = infoDiv.innerHTML;
+            infoDiv.innerHTML = '<div style="color: #d97706; padding: 10px; background: #fef3c7; border-radius: 6px; margin-bottom: 10px;"><strong>Warning:</strong> ' + message + '</div>' + existingHTML;
+        }
+
+        /**
+         * Show OCR success message
+         */
+        function showOCRSuccess(message) {
+            alert(message);
+        }
+
+        // Clean up OCR worker when page unloads
+        window.addEventListener('beforeunload', async function() {
+            if (ocrWorker) {
+                try {
+                    await ocrWorker.terminate();
+                } catch (e) {
+                    console.error('Error terminating worker:', e);
+                }
+            }
+        });
+
+        // ============= REPORT GENERATOR FUNCTIONALITY =============
+        
+        /**
+         * Generate Applicants Report as PDF (Server-side)
+         */
+        window.generateAnalyticsReport = async function() {
+            const btn = document.getElementById('generateReportBtn');
+            if (!btn) return;
+            
+            // Disable button during generation
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating Report...';
+            
+            try {
+                console.log('Initiating server-side PDF generation...');
+                console.log('Button found:', btn);
+                
+                // Call server-side PDF generation endpoint
+                console.log('Fetching from: generate_applicants_report.php');
+                const response = await fetch('generate_applicants_report.php', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/pdf'
+                    },
+                    credentials: 'same-origin'
+                });
+                
+                console.log('Response received:', response);
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Server error:', errorText);
+                    alert('Server Error:\n\nStatus: ' + response.status + '\n\n' + errorText);
+                    throw new Error(errorText || `Server error: ${response.status}`);
+                }
+                
+                // Get the PDF blob
+                const blob = await response.blob();
+                console.log('PDF blob received, size:', blob.size, 'type:', blob.type);
+                
+                if (blob.size === 0) {
+                    alert('Error: PDF file is empty. Check server logs for details.');
+                    throw new Error('PDF file is empty');
+                }
+                
+                // Create download link
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `iSCHO_Applicants_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+                document.body.appendChild(a);
+                console.log('Triggering download...');
+                a.click();
+                
+                // Cleanup
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }, 100);
+                
+                console.log('PDF download initiated successfully');
+                showReportSuccess();
+                
+            } catch (error) {
+                console.error('Error generating report:', error);
+                console.error('Error stack:', error.stack);
+                
+                // Show user-friendly error message
+                alert('Error generating report:\n\n' + (error.message || 'Unknown error occurred. Please try again.') + '\n\nCheck the browser console for more details.');
+            } finally {
+                // Always re-enable button
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-file-pdf"></i> Generate Analytics Report';
+            }
+        };
+        
+        /**
+         * Show success message after report generation
+         */
+        function showReportSuccess() {
+            alert('Report generated successfully!');
+        }
+
+        // ============= END OF REPORT GENERATOR FUNCTIONALITY =============
+        
+        // Add event listener for generate report button
+        document.addEventListener('DOMContentLoaded', function() {
+            const generateBtn = document.getElementById('generateReportBtn');
+            if (generateBtn) {
+                generateBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    if (typeof window.generateAnalyticsReport === 'function') {
+                        window.generateAnalyticsReport();
+                    } else {
+                        console.error('generateAnalyticsReport function not found');
+                        alert('PDF generation function not loaded. Please refresh the page and try again.');
+                    }
+                });
+            }
+        });
+        
     </script>
+    <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(function(registration) {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, function(err) {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+        });
+    }
+</script>
 </body>
 </html>

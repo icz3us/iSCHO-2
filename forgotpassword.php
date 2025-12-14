@@ -33,7 +33,7 @@ function sendPasswordResetEmail($email, $token) {
         $mail->setFrom('ischobsit@gmail.com', 'ISCHO App');
         $mail->addAddress($email);
 
-        $reset_link = "  https://32bf-2001-fd8-b812-d700-9d24-2fe6-269-a01b.ngrok-free.app/ischo2/resetpassword.php?token=" . urlencode($token); // Updated URL
+        $reset_link = "  https://63da-2001-fd8-b812-d700-2423-abad-23bd-eb8c.ngrok-free.app/ischo2/resetpassword.php?token=" . urlencode($token); // Updated URL
 
         $mail->isHTML(true);
         $mail->Subject = "Password Reset Request for iSCHO";
@@ -139,13 +139,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <link rel="icon" type="image/png" href="./images/logo1.png">
     <style>
         :root {
-            --primary-color: #4f46e5;
-            --primary-hover: #4338ca;
-            --bg-color: #f9fafb;
-            --card-bg: rgba(255, 255, 255, 0.95);
-            --text-color: #1f2937;
-            --text-muted: #6b7280;
-            --border-color: #e5e7eb;
+            --primary-color: #6366f1;
+            --primary-hover: #818cf8;
+            --primary-light: rgba(99, 102, 241, 0.1);
+            --secondary-color: #a855f7;
+            --accent-color: #ec4899;
+            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            --bg-gradient-light: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
+            --bg-gradient-card: linear-gradient(135deg, rgba(30, 27, 75, 0.9) 0%, rgba(49, 46, 129, 0.8) 100%);
+            --bg-main: linear-gradient(180deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+            --text-color: #f8fafc;
+            --text-muted: #cbd5e1;
+            --text-bright: #ffffff;
+            --card-bg: rgba(30, 27, 75, 0.8);
+            --card-bg-hover: rgba(49, 46, 129, 0.9);
+            --border-color: rgba(99, 102, 241, 0.3);
+            --border-hover: rgba(99, 102, 241, 0.5);
+            --shadow-sm: 0 2px 8px rgba(99, 102, 241, 0.1);
+            --shadow-md: 0 4px 16px rgba(99, 102, 241, 0.15);
+            --shadow-lg: 0 10px 30px rgba(99, 102, 241, 0.2);
+            --shadow-xl: 0 20px 50px rgba(99, 102, 241, 0.25);
             --error-color: #ef4444;
             --success-color: #22c55e;
         }
@@ -158,8 +171,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         body {
-            background: url('./images/bg.jpg') no-repeat center center fixed;
-            background-size: cover;
+            background: var(--bg-main);
+            background-attachment: fixed;
             color: var(--text-color);
             min-height: 100vh;
             position: relative;
@@ -172,8 +185,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.2);
+            background: url('./images/bg.jpg') no-repeat center center fixed;
+            background-size: cover;
+            opacity: 0.15;
             z-index: 1;
+        }
+
+        body::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 30% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 80%, rgba(168, 85, 247, 0.1) 0%, transparent 50%);
+            z-index: 1;
+            pointer-events: none;
         }
 
         .main-content {
@@ -187,14 +215,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         .forgot-container {
-            background-color: var(--card-bg);
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 10px 15px rgba(0, 0, 0, 0.03);
+            background: var(--bg-gradient-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: var(--shadow-xl);
             width: 100%;
             max-width: 500px;
-            padding: 2rem;
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(10px);
+            padding: 2.5rem;
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .forgot-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: var(--bg-gradient);
+            z-index: 1;
         }
 
         .forgot-header {
@@ -204,8 +246,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         .forgot-header h1 {
             font-size: 1.75rem;
-            font-weight: 600;
-            color: var(--text-color);
+            font-weight: 700;
+            background: var(--bg-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
         }
 
         .forgot-header p {
@@ -223,7 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             margin-bottom: 0.5rem;
             font-weight: 500;
             font-size: 0.9rem;
-            color: var(--text-color);
+            color: var(--text-bright);
         }
 
         .input-group {
@@ -242,33 +288,92 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             width: 100%;
             padding: 0.75rem 1rem 0.75rem 2.5rem;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 1rem;
             transition: all 0.3s ease;
-            background-color: rgba(255, 255, 255, 0.8);
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text-bright);
+            backdrop-filter: blur(10px);
+        }
+
+        .form-control::placeholder {
+            color: var(--text-muted);
         }
 
         .form-control:focus {
             outline: none;
             border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+            transform: translateY(-2px);
+        }
+
+        /* Override browser autofill styles to maintain dark theme */
+        .form-control:-webkit-autofill,
+        .form-control:-webkit-autofill:hover,
+        .form-control:-webkit-autofill:focus,
+        .form-control:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 30px rgba(15, 23, 42, 0.8) inset !important;
+            -webkit-text-fill-color: var(--text-bright) !important;
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+            caret-color: var(--text-bright) !important;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+
+        /* For Firefox autofill */
+        .form-control:-moz-autofill {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
+        /* Ensure input text color stays white when typing */
+        .form-control:not(:placeholder-shown) {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
+        }
+
+        /* For all input types */
+        input.form-control,
+        input[type="text"].form-control,
+        input[type="email"].form-control,
+        input[type="tel"].form-control,
+        input[type="number"].form-control,
+        input[type="date"].form-control,
+        input[type="password"].form-control {
+            background: rgba(15, 23, 42, 0.5) !important;
+            color: var(--text-bright) !important;
+        }
+
+        input.form-control:focus,
+        input[type="text"].form-control:focus,
+        input[type="email"].form-control:focus,
+        input[type="tel"].form-control:focus,
+        input[type="number"].form-control:focus,
+        input[type="date"].form-control:focus,
+        input[type="password"].form-control:focus {
+            background: rgba(15, 23, 42, 0.8) !important;
+            color: var(--text-bright) !important;
         }
 
         .forgot-btn {
             width: 100%;
-            background-color: var(--primary-color);
+            background: var(--bg-gradient);
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            padding: 0.875rem 1.5rem;
             font-size: 1rem;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.3s ease;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
         }
 
         .forgot-btn:hover {
-            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
         }
 
         .error-message {
@@ -292,14 +397,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         .back-to-login {
             display: block;
             text-align: center;
-            margin-top: 1rem;
-            color: var(--primary-color);
+            margin-top: 1.5rem;
+            background: var(--bg-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
             text-decoration: none;
             font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
         }
 
         .back-to-login:hover {
             text-decoration: underline;
+            transform: translateY(-1px);
         }
 
         @media (max-width: 768px) {

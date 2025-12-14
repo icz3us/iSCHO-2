@@ -1,0 +1,23 @@
+[16-Nov-2025 10:43:48 Europe/Berlin] === Chatbot API Request Started ===
+[16-Nov-2025 10:43:48 Europe/Berlin] INPUT: Array
+(
+    [message] => s
+)
+
+[16-Nov-2025 10:43:48 Europe/Berlin] USER MESSAGE: s
+[16-Nov-2025 10:43:48 Europe/Berlin] REQUEST DATA: {"contents":[{"parts":[{"text":"You are a helpful scholarship application assistant for the iSCHO system. \r\nThe user is asking: \"s\"\r\n\r\nPlease provide a helpful, concise response related to scholarship applications, requirements, or the application process."}]}],"generationConfig":{"temperature":0.7,"maxOutputTokens":100}}
+[16-Nov-2025 10:43:48 Europe/Berlin] SENDING REQUEST TO: https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSyByd28htRwUgfdt_Vdx5wY9zuQWO3zQJxg
+[16-Nov-2025 10:43:49 Europe/Berlin] PHP Warning:  file_get_contents(https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSyByd28htRwUgfdt_Vdx5wY9zuQWO3zQJxg): Failed to open stream: HTTP request failed! HTTP/1.1 404 Not Found
+ in C:\xampp\htdocs\iSCHO2\debug_chatbot_api.php on line 87
+[16-Nov-2025 10:43:49 Europe/Berlin] API RESPONSE: FALSE
+[16-Nov-2025 10:43:49 Europe/Berlin] ERROR: file_get_contents failed - Array
+(
+    [type] => 2
+    [message] => file_get_contents(https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSyByd28htRwUgfdt_Vdx5wY9zuQWO3zQJxg): Failed to open stream: HTTP request failed! HTTP/1.1 404 Not Found
+
+    [file] => C:\xampp\htdocs\iSCHO2\debug_chatbot_api.php
+    [line] => 87
+)
+
+[16-Nov-2025 10:50:29 Europe/Berlin] === Chatbot API Request Started ===
+[16-Nov-2025 10:50:29 Europe/Berlin] ERROR: API key not set
